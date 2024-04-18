@@ -9,7 +9,9 @@ apt-get install -y \
   zsh \
   vim \
   build-essential \
-  openssl
+  openssl \
+  wget \
+  unzip
 
 ## Install rustup and common components
 curl https://sh.rustup.rs -sSf | sh -s -- -y 
@@ -28,3 +30,7 @@ cp -R /root/.oh-my-zsh /home/$USERNAME
 cp /root/.zshrc /home/$USERNAME
 sed -i -e "s/\/root\/.oh-my-zsh/\/home\/$USERNAME\/.oh-my-zsh/g" /home/$USERNAME/.zshrc
 chown -R $USER_UID:$USER_GID /home/$USERNAME/.oh-my-zsh /home/$USERNAME/.zshrc
+
+wget https://github.com/codyd51/gypsum/releases/download/1.0/nov_3_time_18_48_st_ives.zip
+unzip nov_3_time_18_48_st_ives.zip
+rm -f nov_3_time_18_48_st_ives.zip
