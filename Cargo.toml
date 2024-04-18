@@ -1,9 +1,11 @@
 [package]
 name = "gnss-test"
 version = "0.1.0"
-authors = ["Maxime Austruy"]
-edition = "2018"
+authors = ["Maxime Austruy <austruym@gmail.com>"]
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+structopt = "0.3.26"
+log = "0.4.17"
