@@ -1,3 +1,3 @@
 fn main() {
-    println!("gnss-test);
+    println!("gnss-test");
 }

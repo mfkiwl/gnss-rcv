@@ -7,15 +7,18 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'rust-codespaces'",
+            "name": "Debug executable 'gnss-test'",
+            "initCommands": [
+                "settings set target.disable-aslr false"
+            ]
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=rust-codespaces",
-                    "--package=rust-codespaces"
+                    "--bin=gnss-test",
+                    "--package=gnss-test"
                 ],
                 "filter": {
-                    "name": "rust-codespaces",
+                    "name": "gnss-test",
                     "kind": "bin"
                 }
             },
@@ -25,16 +28,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'rust-codespaces'",
+            "name": "Debug unit tests in executable 'gnss-test'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=rust-codespaces",
-                    "--package=rust-codespaces"
+                    "--bin=gnss-test",
+                    "--package=gnss-test"
                 ],
                 "filter": {
-                    "name": "rust-codespaces",
+                    "name": "gnss-test",
                     "kind": "bin"
                 }
             },
