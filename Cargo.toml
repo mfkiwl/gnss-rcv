@@ -9,3 +9,4 @@ edition = "2021"
 [dependencies]
 structopt = "0.3.26"
 log = "0.4.17"
+colored = "2.0.0"
