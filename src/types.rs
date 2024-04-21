@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub struct IQPair {
-    pub i: i8,
-    pub q: i8,
+    pub i: f32,
+    pub q: f32,
 }
 impl IQPair {
-    pub fn new(i: i8, q: i8) -> Self {
+    pub fn new(i: f32, q: f32) -> Self {
         Self { i, q }
     }
 }
