@@ -1,7 +1,9 @@
-use gnss_test::gold_code::gen_gold_codes;
-use gnss_test::recording::IQRecording;
 use std::path::PathBuf;
 use structopt::StructOpt;
+
+use gnss_test::gold_code::gen_gold_codes;
+use gnss_test::recording::IQRecording;
+use gnss_test::receiver::GpsReceiver;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "gnss-test", about = "gnss tester")]
@@ -35,7 +37,9 @@ fn main() -> std::io::Result<()> {
 
     let mut recording = IQRecording::new(opt.file, 1023 * 1000 * 2);
     let _ = recording.read_iq_file();
-    let _ = recording.try_acquisition(opt.sat_id);
+
+    let mut receiver = GpsReceiver::new(recording);
+    let _ = receiver.try_acquisition(opt.sat_id);
 
     println!("gnss-test done.");
     Ok(())
