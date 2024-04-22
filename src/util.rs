@@ -1,5 +1,3 @@
-
-
 pub fn pretty_print(n: u64) -> String {
     let multiplier: u64;
     let unit: &str;

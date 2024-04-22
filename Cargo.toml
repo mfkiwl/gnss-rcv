@@ -11,3 +11,4 @@ structopt = "0.3.26"
 log = "0.4.17"
 colored = "2.0.0"
 serde = { version = "1.0.198", features = ["derive"] }
+rustfft = "6.2.0"
