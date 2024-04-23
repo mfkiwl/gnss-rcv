@@ -1,9 +1,9 @@
 use colored::Colorize;
+use rustfft::num_complex::Complex32;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::time::Instant;
-use rustfft::num_complex::Complex32;
 
 use crate::util::pretty_print;
 
@@ -27,17 +27,15 @@ impl IQRecording {
     }
     pub fn read_iq_file(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let file = File::open(self.file_path.clone())?;
+        let mut reader = BufReader::with_capacity(BUFFER_SIZE, &file);
         let mut n: u64 = 0;
+        let ts = Instant::now();
 
         println!(
             "{}: size: {}",
             self.file_path.display(),
             pretty_print(file.metadata().unwrap().len()).bold()
         );
-
-        let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
-
-        let ts = Instant::now();
 
         loop {
             let buf = reader.fill_buf()?;
@@ -49,8 +47,8 @@ impl IQRecording {
 
             for i in 0..len / 8 {
                 let off = 8 * i;
-                let bi: [u8; 4] = [buf[off + 0], buf[off + 1], buf[off + 2], buf[off + 3]];
-                let bq: [u8; 4] = [buf[off + 4], buf[off + 5], buf[off + 6], buf[off + 7]];
+                let bi = [buf[off + 0], buf[off + 1], buf[off + 2], buf[off + 3]];
+                let bq = [buf[off + 4], buf[off + 5], buf[off + 6], buf[off + 7]];
                 let i = f32::from_le_bytes(bi);
                 let q = f32::from_le_bytes(bq);
                 self.iq_vec.push(Complex32::new(i, q));
@@ -62,7 +60,12 @@ impl IQRecording {
             reader.consume(len);
         }
 
-        println!("num_samples: {:?} num_read: {}", self.iq_vec.len(), n);
+        println!(
+            "num_samples: {:?} {:.1} sec num_read: {}",
+            self.iq_vec.len(),
+            self.iq_vec.len() as f32 / self.sample_rate as f32,
+            n
+        );
         let elapsed_msec = ts.elapsed().as_millis();
         let bw = n as f64 * BUFFER_SIZE as f64 * 1000.0 / 1024.0 / 1024.0 / elapsed_msec as f64;
         println!(
@@ -74,13 +77,11 @@ impl IQRecording {
     }
 
     pub fn get_1msec_sample(&self) -> Vec<Complex32> {
-        //let num_samples = self.sample_rate / 1000;
-        let num_samples = 2044;
-        let mut v: Vec<Complex32> = vec![];
+        let num_samples = self.sample_rate / 1000;
+        let mut v = vec![];
         for i in 0..num_samples as usize {
             v.push(self.iq_vec[i]);
         }
         v
     }
-
 }

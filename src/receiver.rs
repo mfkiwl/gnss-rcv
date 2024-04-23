@@ -1,21 +1,21 @@
+use rustfft::{num_complex::Complex32, FftPlanner};
 use std::ops::Mul;
 use std::time::Instant;
-use rustfft::{num_complex::Complex32, FftPlanner};
 
-use crate::recording::IQRecording;
 use crate::gold_code::gen_code;
+use crate::recording::IQRecording;
 use crate::util::norm;
 
-const DOPPLER_SPREAD_HZ: i32 = 7 * 1000;
+const DOPPLER_SPREAD_HZ: u32 = 7 * 1000;
 const DOPPLER_SPREAD_BINS: u32 = 10;
 
 pub struct GpsReceiver {
-    pub iq_recording : IQRecording,
+    pub iq_recording: IQRecording,
 }
 
 impl GpsReceiver {
     pub fn new(iq_recording: IQRecording) -> Self {
-        Self{ iq_recording }
+        Self { iq_recording }
     }
 
     fn find_correlation(va: &Vec<Complex32>, vb: &Vec<f32>) -> f32 {
@@ -40,12 +40,13 @@ impl GpsReceiver {
         norm(&v_res)
     }
 
-    fn find_doppler_shift(
+    fn get_cross_correlation(
         &self,
         iq_vec: &Vec<Complex32>,
         scaled_prn_code: &Vec<f32>,
         estimate_hz: i32,
-        spread_hz: i32,
+        spread_hz: u32,
+        verbose: bool,
     ) -> (i32, i32, f32) {
         const PI: f32 = std::f32::consts::PI;
         //let scaled_prn_code_ext = scaled_prn_code.clone().append(&mut scaled_prn_code.clone());
@@ -59,10 +60,18 @@ impl GpsReceiver {
         let mut max_idx: i32 = -1;
         let mut max_shift_hz: i32 = 0;
 
-        for shift_hz in (estimate_hz - spread_hz..estimate_hz + spread_hz)
+        for shift_hz in (estimate_hz - spread_hz as i32..estimate_hz + spread_hz as i32)
             .step_by(spread_hz as usize / DOPPLER_SPREAD_BINS as usize)
         {
-            //println!("from {} to {} -- {}", estimate_hz - spread_hz, estimate_hz + spread_hz, shift_hz);
+            if verbose {
+                println!(
+                    "from {} to {} -- {}",
+                    estimate_hz - spread_hz as i32,
+                    estimate_hz + spread_hz as i32,
+                    shift_hz
+                );
+            }
+
             let shift_op =
                 Complex32::from_polar(1.0, 2.0 * PI * shift_hz as f32 * num_samples as f32);
             let v: Vec<Complex32> = (0..num_samples)
@@ -86,51 +95,74 @@ impl GpsReceiver {
                     max_corr = corr;
                     max_idx = idx as i32;
                     max_shift_hz = shift_hz as i32;
-                    //println!(
-                    //    " shift: {:6}Hz idx: {:4} corr: {:+.3e}",
-                    //    shift_hz, idx, corr
-                    //);
+                    if verbose {
+                        println!(
+                            " shift: {:6}Hz idx: {:4} corr: {:+.3e}",
+                            shift_hz, idx, corr
+                        );
+                    }
                 }
             }
         }
         (max_shift_hz, max_idx, max_corr)
     }
 
-    fn try_acquisition_one_sat(&self, iq_vec: &Vec<Complex32>, sat_id: usize) {
-        println!("acquisition w/ sat_id={}", sat_id);
+    fn try_acquisition_one_sat(&self, iq_vec: &Vec<Complex32>, sat_id: usize, verbose: bool) {
+        println!("acquisition w/ sat_id={}..", sat_id);
         let prn_code = gen_code(sat_id);
         let code: Vec<f32> = prn_code
             .iter()
             .map(|&x| if x == 0 { -1.0 } else { 1.0 })
             .collect();
+        // up-sample to match to sampling frequency.
         let scaled_code: Vec<f32> = code.iter().flat_map(|&x| [x, x]).collect();
+        assert_eq!(scaled_code.len(), 1023 * 2);
         let mut spread_hz = DOPPLER_SPREAD_HZ;
-        let mut estimate_hz = 0i32;
-        let mut max_corr = 0.0f32;
+        let mut best_estimate_hz = 0i32;
+        let mut best_corr = 0.0f32;
+        let mut best_idx = 0;
 
-        while spread_hz > DOPPLER_SPREAD_BINS as i32 {
-            let (estimate_shift, idx, corr) = self.find_doppler_shift(iq_vec, &scaled_code, estimate_hz, spread_hz);
-            if corr <= max_corr {
+        while spread_hz > DOPPLER_SPREAD_BINS {
+            let (estimate_shift, idx, corr) = self.get_cross_correlation(
+                iq_vec,
+                &scaled_code,
+                best_estimate_hz,
+                spread_hz,
+                verbose,
+            );
+            if corr <= best_corr {
                 break;
             }
-            estimate_hz = estimate_shift;
-            spread_hz = spread_hz / DOPPLER_SPREAD_BINS as i32;
-            max_corr = corr;
-            println!(
+            spread_hz = spread_hz / DOPPLER_SPREAD_BINS;
+            best_estimate_hz = estimate_shift;
+            best_corr = corr;
+            best_idx = idx;
+            if verbose {
+                println!(
                     "MAX: sat_id={} -- estimate_hz={} spread_hz={:3} idx={:4} corr={:+.3e}",
-                    sat_id, estimate_hz, spread_hz, idx, corr);
+                    sat_id, best_estimate_hz, spread_hz, best_idx, best_corr
+                );
+            }
         }
+        println!(
+            " sat_id={} -- estimate_hz={} spread_hz={:3} idx={:4} corr={:+.3e}",
+            sat_id, best_estimate_hz, spread_hz, best_idx, best_corr
+        );
     }
 
-    pub fn try_acquisition(&mut self, sat_id: usize) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn try_acquisition(
+        &mut self,
+        sat_id: usize,
+        verbose: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let sample = self.iq_recording.get_1msec_sample();
         println!("1msec: num_samples: {}", sample.len());
         let ts = Instant::now();
         if sat_id > 0 {
-            self.try_acquisition_one_sat(&sample, sat_id);
+            self.try_acquisition_one_sat(&sample, sat_id, verbose);
         } else {
             for id in 1..32 {
-                self.try_acquisition_one_sat(&sample, id);
+                self.try_acquisition_one_sat(&sample, id, verbose);
             }
         }
 

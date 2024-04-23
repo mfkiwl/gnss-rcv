@@ -1,7 +1,8 @@
 const G1_TAP: [usize; 2] = [2, 9];
 const G2_TAP: [usize; 6] = [1, 2, 5, 7, 8, 9];
-const GOLD_CODE_LEN : usize = 1023;
-const PRN_TO_G2_TAP: [(usize, usize); 32] = [
+const GOLD_CODE_LEN: usize = 1023;
+const NUM_GOLD_CODES: usize = 32;
+const PRN_TO_G2_TAP: [(usize, usize); NUM_GOLD_CODES] = [
     (2, 6),
     (3, 7),
     (4, 8),
@@ -36,21 +37,21 @@ const PRN_TO_G2_TAP: [(usize, usize); 32] = [
     (4, 9),
 ];
 
-pub fn gen_code(prn: usize) -> Vec<usize> {
-    let mut g1 = [1; 10];
-    let mut g2 = [1; 10];
+pub fn gen_code(prn: usize) -> Vec<u8> {
+    let mut g1 = [1u8; 10];
+    let mut g2 = [1u8; 10];
     let mut g = vec![];
 
-    for _i in 0..GOLD_CODE_LEN - 1 {
+    for _i in 0..GOLD_CODE_LEN {
         let p = PRN_TO_G2_TAP.get(prn - 1).unwrap();
         let v = (g1[9] + g2.get(p.0 - 1).unwrap() + g2.get(p.1 - 1).unwrap()) % 2;
         g.push(v);
 
-        let v = G1_TAP.iter().map(|&x| g1[x]).sum::<usize>() % 2;
+        let v = G1_TAP.iter().map(|&x| g1[x]).sum::<u8>() % 2;
         g1[9] = v;
         g1.rotate_right(1);
 
-        let v = G2_TAP.iter().map(|&x| g2[x]).sum::<usize>() % 2;
+        let v = G2_TAP.iter().map(|&x| g2[x]).sum::<u8>() % 2;
         g2[9] = v;
         g2.rotate_right(1);
     }
@@ -58,7 +59,7 @@ pub fn gen_code(prn: usize) -> Vec<usize> {
 }
 
 pub fn gen_gold_codes() {
-    for i in 1..32 {
+    for i in 1..NUM_GOLD_CODES + 1 {
         let g = gen_code(i);
         println!("  code-{:02}: {:?}", i, &g[0..16]);
     }
