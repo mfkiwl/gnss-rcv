@@ -1,6 +1,6 @@
 use rustfft::{num_complex::Complex32, FftPlanner};
-use std::ops::Mul;
 use std::time::Instant;
+use std::ops::Mul;
 
 use crate::gold_code::gen_code;
 use crate::recording::IQRecording;
@@ -8,17 +8,19 @@ use crate::util::norm;
 
 const DOPPLER_SPREAD_HZ: u32 = 7 * 1000;
 const DOPPLER_SPREAD_BINS: u32 = 10;
+const PI: f32 = std::f32::consts::PI;
 
 pub struct GpsReceiver {
     pub iq_recording: IQRecording,
+    pub verbose: bool,
 }
 
 impl GpsReceiver {
-    pub fn new(iq_recording: IQRecording) -> Self {
-        Self { iq_recording }
+    pub fn new(iq_recording: IQRecording, verbose: bool) -> Self {
+        Self { iq_recording, verbose }
     }
 
-    fn find_correlation(va: &Vec<Complex32>, vb: &Vec<f32>) -> f32 {
+    fn calc_correlation(va: &Vec<Complex32>, vb: &Vec<f32>) -> f32 {
         let num_samples = va.len();
         assert_eq!(va.len(), vb.len());
         let mut planner = FftPlanner::new();
@@ -46,10 +48,7 @@ impl GpsReceiver {
         scaled_prn_code: &Vec<f32>,
         estimate_hz: i32,
         spread_hz: u32,
-        verbose: bool,
     ) -> (i32, i32, f32) {
-        const PI: f32 = std::f32::consts::PI;
-        //let scaled_prn_code_ext = scaled_prn_code.clone().append(&mut scaled_prn_code.clone());
         let mut scaled_prn_code_ext = scaled_prn_code.clone();
         scaled_prn_code
             .iter()
@@ -63,7 +62,7 @@ impl GpsReceiver {
         for shift_hz in (estimate_hz - spread_hz as i32..estimate_hz + spread_hz as i32)
             .step_by(spread_hz as usize / DOPPLER_SPREAD_BINS as usize)
         {
-            if verbose {
+            if self.verbose {
                 println!(
                     "from {} to {} -- {}",
                     estimate_hz - spread_hz as i32,
@@ -89,13 +88,13 @@ impl GpsReceiver {
             }
             for idx in (0..num_samples).step_by(2) {
                 let iq_vec_shifted = Vec::from(&scaled_prn_code_ext[idx..(idx + num_samples)]);
-                let corr = Self::find_correlation(&v, &iq_vec_shifted);
+                let corr = Self::calc_correlation(&v, &iq_vec_shifted);
 
                 if corr > max_corr {
                     max_corr = corr;
                     max_idx = idx as i32;
                     max_shift_hz = shift_hz as i32;
-                    if verbose {
+                    if self.verbose {
                         println!(
                             " shift: {:6}Hz idx: {:4} corr: {:+.3e}",
                             shift_hz, idx, corr
@@ -107,7 +106,7 @@ impl GpsReceiver {
         (max_shift_hz, max_idx, max_corr)
     }
 
-    fn try_acquisition_one_sat(&self, iq_vec: &Vec<Complex32>, sat_id: usize, verbose: bool) {
+    fn try_acquisition_one_sat(&self, iq_vec: &Vec<Complex32>, sat_id: usize) {
         println!("acquisition w/ sat_id={}..", sat_id);
         let prn_code = gen_code(sat_id);
         let code: Vec<f32> = prn_code
@@ -128,7 +127,6 @@ impl GpsReceiver {
                 &scaled_code,
                 best_estimate_hz,
                 spread_hz,
-                verbose,
             );
             if corr <= best_corr {
                 break;
@@ -137,7 +135,7 @@ impl GpsReceiver {
             best_estimate_hz = estimate_shift;
             best_corr = corr;
             best_idx = idx;
-            if verbose {
+            if self.verbose {
                 println!(
                     "MAX: sat_id={} -- estimate_hz={} spread_hz={:3} idx={:4} corr={:+.3e}",
                     sat_id, best_estimate_hz, spread_hz, best_idx, best_corr
@@ -153,16 +151,15 @@ impl GpsReceiver {
     pub fn try_acquisition(
         &mut self,
         sat_id: usize,
-        verbose: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let sample = self.iq_recording.get_1msec_sample();
         println!("1msec: num_samples: {}", sample.len());
         let ts = Instant::now();
         if sat_id > 0 {
-            self.try_acquisition_one_sat(&sample, sat_id, verbose);
+            self.try_acquisition_one_sat(&sample, sat_id);
         } else {
             for id in 1..32 {
-                self.try_acquisition_one_sat(&sample, id, verbose);
+                self.try_acquisition_one_sat(&sample, id);
             }
         }
 

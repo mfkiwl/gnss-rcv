@@ -38,8 +38,8 @@ fn main() -> std::io::Result<()> {
     let mut recording = IQRecording::new(opt.file, 1023 * 1000 * 2);
     recording.read_iq_file().unwrap();
 
-    let mut receiver = GpsReceiver::new(recording);
-    receiver.try_acquisition(opt.sat_id, opt.verbose).unwrap();
+    let mut receiver = GpsReceiver::new(recording, opt.verbose);
+    receiver.try_acquisition(opt.sat_id).unwrap();
 
     println!("gnss-test done.");
     Ok(())
