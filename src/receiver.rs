@@ -1,7 +1,7 @@
 use colored::Colorize;
 use rustfft::{num_complex::Complex64, FftPlanner};
-use std::ops::Mul;
 use std::collections::HashSet;
+use std::ops::Mul;
 use std::time::Instant;
 
 use crate::gold_code::gen_code;
@@ -219,7 +219,7 @@ impl GpsReceiver {
     pub fn try_acquisition(
         &mut self,
         off_msec: usize,
-        sat_set: HashSet<usize> ,
+        sat_set: HashSet<usize>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let num_msec = ACQUISITION_PERIOD_MSEC;
         let samples = self.iq_recording.get_msec_sample(off_msec, num_msec);

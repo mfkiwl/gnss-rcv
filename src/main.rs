@@ -1,12 +1,12 @@
 use colored::Colorize;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use structopt::StructOpt;
-use std::collections::HashSet;
 
-use gnss_test::util::pretty_print;
 use gnss_test::gold_code::gen_gold_codes;
 use gnss_test::receiver::GpsReceiver;
 use gnss_test::recording::IQRecording;
+use gnss_test::util::pretty_print;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "gnss-test", about = "gnss tester")]
@@ -21,7 +21,7 @@ struct Options {
     sample_rate: usize,
     #[structopt(long, default_value = "0")]
     off_msec: usize,
-    #[structopt(long, default_value="")]
+    #[structopt(long, default_value = "")]
     sats: String,
     #[structopt(long, short = "v")]
     verbose: bool,
@@ -43,7 +43,7 @@ fn main() -> std::io::Result<()> {
         return Ok(());
     }
 
-    let mut sat_set : HashSet<usize> = HashSet::new();
+    let mut sat_set: HashSet<usize> = HashSet::new();
     if !opt.sats.is_empty() {
         for s in opt.sats.split(',') {
             sat_set.insert(usize::from_str_radix(s, 10).unwrap());

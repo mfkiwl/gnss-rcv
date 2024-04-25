@@ -64,7 +64,10 @@ impl IQRecording {
                     ]);
                     assert!(-1.0 <= i && i <= 1.0);
                     assert!(-1.0 <= q && q <= 1.0);
-                    self.iq_vec.push(Complex64{ re: i as f64, im: q as f64});
+                    self.iq_vec.push(Complex64 {
+                        re: i as f64,
+                        im: q as f64,
+                    });
                 }
             }
             n += 1;
