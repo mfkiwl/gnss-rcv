@@ -59,6 +59,7 @@ pub fn gen_code(prn: usize) -> Vec<u8> {
 }
 
 pub fn gen_gold_codes() {
+    println!("generating gold codes");
     for i in 1..NUM_GOLD_CODES + 1 {
         let g = gen_code(i);
         println!("  code-{:02}: {:?}", i, &g[0..20]);

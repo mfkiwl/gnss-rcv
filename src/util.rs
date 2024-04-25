@@ -22,6 +22,10 @@ pub fn pretty_print(n: u64) -> String {
     return format!("{:.3} {}", v, unit);
 }
 
+pub fn norm_square(v: &Vec<Complex64>) -> f64 {
+    v.iter().map(|&x| x.norm_sqr()).sum::<f64>()
+}
+
 pub fn norm(v: &Vec<Complex64>) -> f64 {
-    v.iter().map(|&x| x.norm_sqr()).sum::<f64>().sqrt()
+    norm_square(v).sqrt()
 }
