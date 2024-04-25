@@ -8,7 +8,7 @@ use gnss_test::recording::IQRecording;
 #[derive(StructOpt, Debug)]
 #[structopt(name = "gnss-test", about = "gnss tester")]
 struct Options {
-    #[structopt(short = "g")]
+    #[structopt(short = "g", help = "generate gold codes")]
     gen_gold_code: bool,
     #[structopt(long, default_value = "nov_3_time_18_48_st_ives")]
     file: PathBuf,
@@ -24,9 +24,9 @@ fn main() -> std::io::Result<()> {
     let opt = Options::from_args();
 
     println!(
-        "gnss-test: file: {} - sample_rate={}",
+        "gnss-test: file: {} - sample_rate: {} KHz",
         opt.file.display(),
-        opt.sample_rate
+        opt.sample_rate / 1000,
     );
 
     if opt.gen_gold_code {
