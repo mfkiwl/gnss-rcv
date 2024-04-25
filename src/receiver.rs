@@ -12,6 +12,7 @@ const PRN_CODE_LEN: usize = 1023;
 const DOPPLER_SPREAD_HZ: u32 = 8 * 1000;
 const DOPPLER_SPREAD_BINS: u32 = 10;
 const ACQUISITION_PERIOD_MSEC: usize = 10;
+const SNR_THRESHOLD: f64 = 2.0;
 const PI: f64 = std::f64::consts::PI;
 
 pub struct GpsReceiver {
@@ -94,13 +95,14 @@ impl GpsReceiver {
         let mut best_doppler_hz: i32 = 0;
         let mut best_phase_offset = 0;
         let mut best_snr = 0.0;
+        let mut best_corr_norm = 0.0;
 
         let lo_hz = estimate_hz - spread_hz as i32;
         let hi_hz = estimate_hz + spread_hz as i32 + 1;
 
         for doppler_hz in (lo_hz..hi_hz).step_by((spread_hz / DOPPLER_SPREAD_BINS) as usize) {
             let imaginary = -2.0 * PI * doppler_hz as f64;
-            let mut b_corr: Vec<f64> = vec![0.0; 2046];
+            let mut b_corr = vec![0f64; 2046];
 
             for idx in 0..num_msec {
                 let sample_index = idx * num_samples_per_prn + off_msec;
@@ -124,7 +126,7 @@ impl GpsReceiver {
 
                 let corr = Self::calc_correlation(&iq_vec_sample, &prn_code);
                 for i in 0..corr.len() {
-                    b_corr[i] += corr[i].re;
+                    b_corr[i] += corr[i].norm();
                 }
             }
             if self.verbose {
@@ -136,21 +138,22 @@ impl GpsReceiver {
                 );
             }
 
-            let (idx, b_corr_peak) = Self::get_max(&b_corr);
-            let b_corr_second = Self::get_2nd_max(&b_corr);
-            assert!(b_corr_peak != 0.0);
-            assert!(b_corr_second != 0.0);
+            let b_corr_norm = b_corr.iter().map(|&x| x * x).sum::<f64>();
 
-            let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
-
-            if b_peak_to_second > best_snr || self.verbose {
+            if b_corr_norm > best_corr_norm || self.verbose {
+                let b_corr_second = Self::get_2nd_max(&b_corr);
+                let (idx, b_corr_peak) = Self::get_max(&b_corr);
+                assert!(b_corr_peak != 0.0);
+                assert!(b_corr_second != 0.0);
+                let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
                 best_snr = b_peak_to_second;
                 best_doppler_hz = doppler_hz as i32;
                 best_phase_offset = idx;
+                best_corr_norm = b_corr_norm;
                 if self.verbose {
                     println!(
                         "   best_doppler: {} Hz snr: {:+.1} idx={}",
-                        doppler_hz, b_peak_to_second, idx
+                        doppler_hz, b_peak_to_second, idx / 2
                     );
                 }
             }
@@ -199,6 +202,7 @@ impl GpsReceiver {
             best_estimate_hz = estimate_hz;
             best_snr = snr;
             best_phase_idx = phase_idx;
+
             if self.verbose {
                 let s = format!(
                     "BEST: sat_id={} -- estimate_hz={} spread_hz={:3} snr={:.3} phase_idx={}",
@@ -207,13 +211,15 @@ impl GpsReceiver {
                 println!("{}", s.green());
             }
         }
-        println!(
-            " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} snr: {}",
-            format!("{:2}", sat_id).yellow(),
-            best_estimate_hz,
-            best_phase_idx / 2,
-            format!("{:.2}", best_snr).green(),
-        );
+        if best_snr >= SNR_THRESHOLD {
+            println!(
+                    " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} snr: {}",
+                    format!("{:2}", sat_id).yellow(),
+                    best_estimate_hz,
+                    best_phase_idx / 2,
+                    format!("{:.2}", best_snr).green(),
+                    );
+        }
     }
 
     pub fn try_acquisition(
