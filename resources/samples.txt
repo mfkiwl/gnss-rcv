@@ -1,0 +1,23 @@
+-rw-r--r-- 1 pi   240000000 Apr 25 15:55 GPS-L1-2022-03-27.sigmf-data
+-rw-r--r-- 1 pi    16368000 Mar  3  2014 gioveAandB_short.bin
+-rw-r--r-- 1 pi   490221600 Apr 25 22:33 gpssim.bin
+-rw-r--r-- 1 pi         716 Apr 25 22:33 gpssim.txt
+-rw-r--r-- 1 pi 12699331696 Nov  5 23:15 nov_3_time_18_48_st_ives
+
+** GPS-L1-2022-03-27.sigmf-data
+source: https://zenodo.org/records/6394603
+complex i16 @4KHz -- not usable just yet
+
+** gioveAandB_short.bin
+http://gfix.dk/matlab-gnss-sdr-book/gnss-signal-records/
+(not used yet)
+
+** gpssim.bin
+cf https://github.com/osqzss/gps-sdr-sim
+result of:
+ ./gps-sdr-sim -b 16 -d 60 -t 2022/01/01,01:02:03 -l 35.681298,139.766247,10.0 -e brdc0010.22n -s 2046000
+file-type: 2xi16
+
+** nov_3_time_18_48_st_ives
+https://github.com/codyd51/gypsum/releases
+file-type: 2xf32
