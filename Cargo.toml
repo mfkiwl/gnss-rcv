@@ -4,11 +4,15 @@ version = "0.1.0"
 authors = ["Maxime Austruy <austruym@gmail.com>"]
 edition = "2021"
 
+[profile.release]
+debug = true
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 structopt = "0.3.26"
-log = "0.4.17"
+#log = "0.4.17"
 colored = "2.0.0"
-serde = { version = "1.0.198", features = ["derive"] }
 rustfft = "6.2.0"
+bytesize = {version = "1.2.0", features = ["serde"]}
+serde = { version = "1.0.198", features = ["derive"] }

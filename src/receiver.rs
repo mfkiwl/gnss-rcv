@@ -6,7 +6,6 @@ use std::time::Instant;
 
 use crate::gold_code::gen_code;
 use crate::recording::IQRecording;
-//use crate::util::norm;
 
 const PRN_CODE_LEN: usize = 1023;
 const DOPPLER_SPREAD_HZ: u32 = 8 * 1000;
@@ -153,7 +152,9 @@ impl GpsReceiver {
                 if self.verbose {
                     println!(
                         "   best_doppler: {} Hz snr: {:+.1} idx={}",
-                        doppler_hz, b_peak_to_second, idx / 2
+                        doppler_hz,
+                        b_peak_to_second,
+                        idx / 2
                     );
                 }
             }
@@ -213,12 +214,12 @@ impl GpsReceiver {
         }
         if best_snr >= SNR_THRESHOLD {
             println!(
-                    " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} snr: {}",
-                    format!("{:2}", sat_id).yellow(),
-                    best_estimate_hz,
-                    best_phase_idx / 2,
-                    format!("{:.2}", best_snr).green(),
-                    );
+                " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} snr: {}",
+                format!("{:2}", sat_id).yellow(),
+                best_estimate_hz,
+                best_phase_idx / 2,
+                format!("{:.2}", best_snr).green(),
+            );
         }
     }
 
