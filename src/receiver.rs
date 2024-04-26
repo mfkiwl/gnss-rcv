@@ -6,17 +6,21 @@ use std::time::Instant;
 
 use crate::gold_code::gen_code;
 use crate::recording::IQRecording;
+use crate::util::get_max_with_idx;
+use crate::util::get_2nd_max;
 
+const NUM_GPS_SATS: usize = 32;
 const PRN_CODE_LEN: usize = 1023;
 const DOPPLER_SPREAD_HZ: u32 = 8 * 1000;
 const DOPPLER_SPREAD_BINS: u32 = 10;
 const ACQUISITION_PERIOD_MSEC: usize = 10;
-const SNR_THRESHOLD: f64 = 2.0;
+const SNR_THRESHOLD: f64 = 1.0;
 const PI: f64 = std::f64::consts::PI;
 
 pub struct GpsReceiver {
     pub iq_recording: IQRecording,
     pub verbose: bool,
+    fft_planner : FftPlanner<f64>,
 }
 
 impl GpsReceiver {
@@ -24,63 +28,42 @@ impl GpsReceiver {
         Self {
             iq_recording,
             verbose,
+            fft_planner: FftPlanner::new(),
         }
     }
 
-    fn normalize(data: &Vec<Complex64>) -> Vec<Complex64> {
+    fn normalize_post_fft(data: &Vec<Complex64>) -> Vec<Complex64> {
         let len = data.len() as f64;
         data.iter().map(|x| x / len).collect()
     }
 
-    fn calc_correlation(v_antenna: &Vec<Complex64>, v_prn: &Vec<Complex64>) -> Vec<Complex64> {
+    fn calc_correlation(&mut self, v_antenna: &Vec<Complex64>, prn_code_fft: &Vec<Complex64>) -> Vec<Complex64> {
         let num_samples = v_antenna.len();
-        assert_eq!(v_antenna.len(), v_prn.len());
-        let mut planner = FftPlanner::new();
-        let fft_fw_ant = planner.plan_fft_forward(num_samples);
-        let fft_fw_prn = planner.plan_fft_forward(num_samples);
+        assert_eq!(v_antenna.len(), prn_code_fft.len());
+        let fft_fw = self.fft_planner.plan_fft_forward(num_samples);
 
         let mut v_antenna_buf = v_antenna.clone();
-        let mut v_prn_buf = v_prn.clone();
 
-        fft_fw_ant.process(&mut v_antenna_buf);
-        fft_fw_prn.process(&mut v_prn_buf);
+        fft_fw.process(&mut v_antenna_buf);
 
         let mut v_res: Vec<_> = (0..v_antenna_buf.len())
-            .map(|i| v_antenna_buf[i].mul(v_prn_buf[i].conj()))
+            .map(|i| v_antenna_buf[i].mul(prn_code_fft[i].conj()))
             .collect();
 
-        let fft_bw = planner.plan_fft_inverse(num_samples);
+        let fft_bw = self.fft_planner.plan_fft_inverse(num_samples);
         fft_bw.process(&mut v_res);
-        Self::normalize(&v_res)
+        Self::normalize_post_fft(&v_res) // not really required
     }
 
-    fn get_max(v: &Vec<f64>) -> (usize, f64) {
-        let mut max = 0.0f64;
-        let mut idx = 0;
-        for i in 0..v.len() {
-            if v[i] > max {
-                max = v[i];
-                idx = i;
-            }
-        }
-        (idx, max)
-    }
-
-    fn get_2nd_max(v: &Vec<f64>) -> f64 {
-        let (i_max, max) = Self::get_max(v);
-
-        let mut second = 0.0;
-        let delta = 50;
-        for i in 0..v.len() {
-            if v[i] > second && v[i] < max && (i > i_max + delta || i < i_max - delta) {
-                second = v[i];
-            }
-        }
-        second
+    fn calc_prn_fft(&mut self, v_prn: &Vec<Complex64>) -> Vec<Complex64> {
+        let fft_fw = self.fft_planner.plan_fft_forward(v_prn.len());
+        let mut v_prn_buf = v_prn.clone();
+        fft_fw.process(&mut v_prn_buf);
+        v_prn_buf
     }
 
     fn calc_cross_correlation(
-        &self,
+        &mut self,
         iq_vec: &Vec<Complex64>,
         prn_code: &Vec<Complex64>,
         num_msec: usize,
@@ -95,6 +78,8 @@ impl GpsReceiver {
         let mut best_phase_offset = 0;
         let mut best_snr = 0.0;
         let mut best_corr_norm = 0.0;
+
+        let prn_code_fft = self.calc_prn_fft(&prn_code);
 
         let lo_hz = estimate_hz - spread_hz as i32;
         let hi_hz = estimate_hz + spread_hz as i32 + 1;
@@ -118,12 +103,13 @@ impl GpsReceiver {
                 let mut iq_vec_sample = Vec::from(&iq_vec[range_lo..range_hi]);
                 assert_eq!(iq_vec_sample.len(), doppler_shift.len());
                 assert_eq!(iq_vec_sample.len(), prn_code.len());
+                assert_eq!(iq_vec_sample.len(), prn_code_fft.len());
 
                 for i in 0..iq_vec_sample.len() {
                     iq_vec_sample[i] = iq_vec_sample[i].mul(doppler_shift[i]);
                 }
 
-                let corr = Self::calc_correlation(&iq_vec_sample, &prn_code);
+                let corr = self.calc_correlation(&iq_vec_sample, &prn_code_fft);
                 for i in 0..corr.len() {
                     b_corr[i] += corr[i].norm();
                 }
@@ -140,8 +126,8 @@ impl GpsReceiver {
             let b_corr_norm = b_corr.iter().map(|&x| x * x).sum::<f64>();
 
             if b_corr_norm > best_corr_norm || self.verbose {
-                let b_corr_second = Self::get_2nd_max(&b_corr);
-                let (idx, b_corr_peak) = Self::get_max(&b_corr);
+                let b_corr_second = get_2nd_max(&b_corr);
+                let (idx, b_corr_peak) = get_max_with_idx(&b_corr);
                 assert!(b_corr_peak != 0.0);
                 assert!(b_corr_second != 0.0);
                 let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
@@ -163,7 +149,7 @@ impl GpsReceiver {
     }
 
     fn try_acquisition_one_sat(
-        &self,
+        &mut self,
         iq_vec: &Vec<Complex64>,
         sat_id: usize,
         num_msec: usize,
@@ -236,7 +222,7 @@ impl GpsReceiver {
                 self.try_acquisition_one_sat(&samples, id, num_msec, off_msec);
             }
         } else {
-            for id in 0..32 {
+            for id in 0..NUM_GPS_SATS {
                 self.try_acquisition_one_sat(&samples, 1 + id, num_msec, off_msec);
             }
         }

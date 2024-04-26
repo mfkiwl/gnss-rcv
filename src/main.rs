@@ -14,9 +14,9 @@ use gnss_test::recording::IQRecording;
 struct Options {
     #[structopt(short = "g", help = "generate gold codes")]
     gen_gold_code: bool,
-    #[structopt(short = "f", long, default_value = "nov_3_time_18_48_st_ives")]
+    #[structopt(short = "f", long, default_value = "resources/nov_3_time_18_48_st_ives")]
     file: PathBuf,
-    #[structopt(short = "t", long, default_value = "float32")]
+    #[structopt(short = "t", long, default_value = "2xf32")]
     iq_file_type: IQFileType,
     #[structopt(long, default_value = "2046000")]
     sample_rate: usize,
@@ -37,9 +37,10 @@ fn main() -> std::io::Result<()> {
     }
 
     println!(
-        "gnss-test: {} -- {} -- sample_rate: {} off_msec={}",
+        "gnss-test: {} -- {} {} sample_rate: {} off_msec={}",
         opt.file.to_str().unwrap().green(),
         ByteSize::b(opt.file.metadata().unwrap().len()).to_string_as(false).bold(),
+        opt.iq_file_type,
         format!("{} KHz", opt.sample_rate / 1000).bold(),
         opt.off_msec,
     );

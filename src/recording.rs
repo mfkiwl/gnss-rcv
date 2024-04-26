@@ -13,6 +13,7 @@ const BUFFER_SIZE: usize = 128 * 1024;
 pub enum IQFileType {
     TypePairFloat32,
     TypePairInt16,
+    TypePairInt8,
     TypeOneInt8,
 }
 
@@ -20,10 +21,9 @@ impl FromStr for IQFileType {
     type Err = Box<dyn Error>;
     fn from_str(input: &str) -> Result<IQFileType, Self::Err> {
         match input {
-            "float32" => Ok(IQFileType::TypePairFloat32),
-            "f32" => Ok(IQFileType::TypePairFloat32),
-            "int16" => Ok(IQFileType::TypePairInt16),
-            "i16" => Ok(IQFileType::TypePairInt16),
+            "2xf32" => Ok(IQFileType::TypePairFloat32),
+            "2xi16" => Ok(IQFileType::TypePairInt16),
+            "2xi8" => Ok(IQFileType::TypePairInt8),
             "i8" => Ok(IQFileType::TypeOneInt8),
             _ => Err(format!("Failed to parse {}", input).into()),
         }
@@ -33,8 +33,9 @@ impl FromStr for IQFileType {
 impl fmt::Display for IQFileType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            IQFileType::TypePairFloat32 => write!(f, "float32"),
-            IQFileType::TypePairInt16 => write!(f, "int16"),
+            IQFileType::TypePairFloat32 => write!(f, "2xf32"),
+            IQFileType::TypePairInt16 => write!(f, "2xi16"),
+            IQFileType::TypePairInt8 => write!(f, "2xi8"),
             IQFileType::TypeOneInt8 => write!(f, "i8"),
         }
     }
@@ -71,6 +72,14 @@ impl IQRecording {
             }
 
             match self.file_type {
+                IQFileType::TypePairInt8 => {
+                    for off in (0..len).step_by(2) {
+                        self.iq_vec.push(Complex64 {
+                            re: buf[off + 0] as i8 as f64 / std::i8::MAX as f64,
+                            im: buf[off + 1] as i8 as f64 / std::i8::MAX as f64,
+                        });
+                    }
+                }
                 IQFileType::TypeOneInt8 => {
                     for off in 0..len {
                         self.iq_vec.push(Complex64 {
