@@ -149,9 +149,14 @@ impl IQRecording {
         let num_samples = num_msec * num_samples_per_msec;
         let lo = off_msec * num_samples_per_msec;
         let hi = off_msec * num_samples_per_msec + num_samples;
-        println!(
+
+        log::info!(
             "get_msec_sample: off_msec={} duration={} msec num_samples={} lo={} hi={}",
-            off_msec, num_msec, num_samples, lo, hi
+            off_msec,
+            num_msec,
+            num_samples,
+            lo,
+            hi
         );
         assert!(hi <= self.iq_vec.len());
         let w: Vec<_> = self.iq_vec[lo..hi].iter().cloned().collect();

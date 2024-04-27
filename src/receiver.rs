@@ -2,6 +2,7 @@ use colored::Colorize;
 use rustfft::{num_complex::Complex64, FftPlanner};
 use std::collections::HashMap;
 use std::ops::Mul;
+use std::time::Instant;
 
 use crate::gold_code::gen_code;
 use crate::recording::IQRecording;
@@ -15,20 +16,32 @@ const ACQUISITION_PERIOD_MSEC: usize = 10;
 const SNR_THRESHOLD: f64 = 1.0;
 const PI: f64 = std::f64::consts::PI;
 
-pub struct GpsReceiver {
+pub struct GnssReceiver {
     pub iq_recording: IQRecording,
     pub verbose: bool,
     fft_planner: FftPlanner<f64>,
     prn_code_fft_map: HashMap<usize, Vec<Complex64>>,
+    sat_vec: Vec<usize>,
+    off_msec: usize,
+    last_acq_off_msec: usize,
+    cached_iq_vec: Vec<Complex64>,
+    cached_num_msec: usize,
+    cached_off_msec_tail: usize,
 }
 
-impl GpsReceiver {
-    pub fn new(iq_recording: IQRecording, verbose: bool) -> Self {
+impl GnssReceiver {
+    pub fn new(iq_recording: IQRecording, verbose: bool, sat_vec: Vec<usize>) -> Self {
         Self {
             iq_recording,
             verbose,
             fft_planner: FftPlanner::new(),
             prn_code_fft_map: HashMap::<usize, Vec<Complex64>>::new(),
+            sat_vec,
+            off_msec: 0,
+            last_acq_off_msec: 0,
+            cached_iq_vec: Vec::<Complex64>::new(),
+            cached_num_msec: 0,
+            cached_off_msec_tail: 0,
         }
     }
 
@@ -168,14 +181,8 @@ impl GpsReceiver {
         (best_doppler_hz, best_snr, best_phase_offset)
     }
 
-    fn try_acquisition_one_sat(
-        &mut self,
-        iq_vec: &Vec<Complex64>,
-        sat_id: usize,
-        num_msec: usize,
-        off_msec: usize,
-    ) {
-        assert_eq!(iq_vec.len(), PRN_CODE_LEN * 2 * num_msec);
+    fn try_acquisition_one_sat(&mut self, iq_vec: &Vec<Complex64>, sat_id: usize, off_msec: usize) {
+        assert_eq!(iq_vec.len(), PRN_CODE_LEN * 2 * ACQUISITION_PERIOD_MSEC);
         let mut spread_hz = DOPPLER_SPREAD_HZ;
         let mut best_estimate_hz = 0i32;
         let mut best_snr = 0.0f64;
@@ -185,7 +192,7 @@ impl GpsReceiver {
             let (estimate_hz, snr, phase_idx) = self.calc_cross_correlation(
                 iq_vec,
                 sat_id,
-                num_msec,
+                ACQUISITION_PERIOD_MSEC,
                 off_msec,
                 best_estimate_hz,
                 spread_hz,
@@ -217,25 +224,54 @@ impl GpsReceiver {
         }
     }
 
-    pub fn try_acquisition(
-        &mut self,
-        off_msec: usize,
-        sat_vec: &Vec<usize>,
-        scan: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let num_msec = ACQUISITION_PERIOD_MSEC;
-        let mut i = 0;
-
-        loop {
-            let samples = self.iq_recording.get_msec_sample(off_msec + i, num_msec);
-            for id in sat_vec {
-                self.try_acquisition_one_sat(&samples, *id, num_msec, off_msec + i);
-            }
-            if !scan {
-                break;
-            }
-            i += 10;
+    fn try_periodic_acquisition(&mut self) {
+        if self.cached_num_msec < ACQUISITION_PERIOD_MSEC {
+            return;
         }
+
+        if self.cached_off_msec_tail < self.last_acq_off_msec + ACQUISITION_PERIOD_MSEC {
+            return;
+        }
+
+        let ts = Instant::now();
+        let cached_vec_len = self.cached_iq_vec.len();
+        let num_samples = ACQUISITION_PERIOD_MSEC * PRN_CODE_LEN * 2;
+
+        log::warn!(
+            "try_acq: vec_deq_off_msec_tail={} vec_deq_len={}",
+            self.cached_off_msec_tail,
+            cached_vec_len
+        );
+
+        let samples = &self.cached_iq_vec[cached_vec_len - num_samples..cached_vec_len].to_vec();
+        let samples_off_msec = self.cached_off_msec_tail - ACQUISITION_PERIOD_MSEC;
+
+        for id in self.sat_vec.clone() {
+            self.try_acquisition_one_sat(&samples, id, samples_off_msec);
+        }
+        log::warn!("acquisition: {} msec", ts.elapsed().as_millis());
+        self.last_acq_off_msec = self.cached_off_msec_tail;
+    }
+
+    pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let num_msec_per_step = 1;
+        let mut vec_samples = self
+            .iq_recording
+            .get_msec_sample(self.off_msec, num_msec_per_step);
+        log::info!("step: off_msec={}", self.off_msec);
+
+        self.cached_iq_vec.append(&mut vec_samples);
+        self.cached_off_msec_tail += num_msec_per_step;
+        self.cached_num_msec += num_msec_per_step;
+        self.off_msec += num_msec_per_step;
+        if self.cached_num_msec > ACQUISITION_PERIOD_MSEC {
+            let num_msec_to_remove =  self.cached_num_msec - ACQUISITION_PERIOD_MSEC;
+            let num_samples = num_msec_to_remove * PRN_CODE_LEN * 2;
+            let _ = self.cached_iq_vec.drain(0..num_samples);
+            self.cached_num_msec -= num_msec_to_remove;
+        }
+
+        self.try_periodic_acquisition();
 
         Ok(())
     }

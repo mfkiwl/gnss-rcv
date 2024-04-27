@@ -1,11 +1,12 @@
 use bytesize::ByteSize;
 use colored::Colorize;
 use std::path::PathBuf;
-use std::time::Instant;
 use structopt::StructOpt;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use gnss_test::gold_code::gen_gold_codes;
-use gnss_test::receiver::GpsReceiver;
+use gnss_test::receiver::GnssReceiver;
 use gnss_test::recording::IQFileType;
 use gnss_test::recording::IQRecording;
 
@@ -32,17 +33,22 @@ struct Options {
     sats: String,
     #[structopt(long, short = "v")]
     verbose: bool,
-    #[structopt(long)]
-    scan: bool,
 }
 
 fn main() -> std::io::Result<()> {
     let opt = Options::from_args();
+    let exit_req = Arc::new(AtomicBool::new(false));
+    let exit_req_clone = exit_req.clone();
 
     if opt.gen_gold_code {
         gen_gold_codes();
         return Ok(());
     }
+
+    env_logger::init();
+    ctrlc::set_handler(move || {
+            exit_req_clone.store(true, Ordering::SeqCst);
+            }).expect("Error setting Ctrl-C handler");
 
     println!(
         "gnss-test: {} -- {} {} sample_rate: {} off_msec={}",
@@ -69,12 +75,16 @@ fn main() -> std::io::Result<()> {
     let mut recording = IQRecording::new(opt.file, opt.sample_rate, opt.iq_file_type);
     recording.read_iq_file().unwrap();
 
-    let mut receiver = GpsReceiver::new(recording, opt.verbose);
+    let mut receiver = GnssReceiver::new(recording, opt.verbose, sat_vec);
 
-    let ts = Instant::now();
-    receiver
-        .try_acquisition(opt.off_msec, &sat_vec, opt.scan)
-        .unwrap();
-    println!("duration: {} msec", ts.elapsed().as_millis());
+    loop {
+        let _ = receiver.process_step();
+        if exit_req.load(Ordering::SeqCst) {
+            break;
+        }
+    }
+
+    log::warn!("GNSS terminating.");
+
     Ok(())
 }

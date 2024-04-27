@@ -11,8 +11,10 @@ debug = true
 
 [dependencies]
 structopt = "0.3.26"
-#log = "0.4.17"
+env_logger = "0.11.3"
 colored = "2.0.0"
 rustfft = "6.2.0"
 bytesize = {version = "1.2.0", features = ["serde"]}
 serde = { version = "1.0.198", features = ["derive"] }
+log = "0.4.21"
+ctrlc = "3.4.4"
