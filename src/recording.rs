@@ -136,7 +136,9 @@ impl IQRecording {
         let bw = n as f64 * BUFFER_SIZE as f64 / 1024.0 / 1024.0 / ts.elapsed().as_secs_f64();
         println!(
             "read_from_file: {} msec -- bandwidth: {:.1} MB/sec -- num_read_ops={}",
-            ts.elapsed().as_millis(), bw, n
+            ts.elapsed().as_millis(),
+            bw,
+            n
         );
 
         Ok(())

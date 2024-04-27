@@ -1,16 +1,8 @@
--rw-r--r-- 1 pi   240000000 Apr 25 15:55 GPS-L1-2022-03-27.sigmf-data
--rw-r--r-- 1 pi    16368000 Mar  3  2014 gioveAandB_short.bin
+-rw-r--r-- 1 pi 12699331696 Nov  5 23:15 nov_3_time_18_48_st_ives
 -rw-r--r-- 1 pi   490221600 Apr 25 22:33 gpssim.bin
 -rw-r--r-- 1 pi         716 Apr 25 22:33 gpssim.txt
--rw-r--r-- 1 pi 12699331696 Nov  5 23:15 nov_3_time_18_48_st_ives
-
-** GPS-L1-2022-03-27.sigmf-data
-source: https://zenodo.org/records/6394603
-complex i16 @4KHz -- not usable just yet
-
-** gioveAandB_short.bin
-http://gfix.dk/matlab-gnss-sdr-book/gnss-signal-records/
-(not used yet)
+-rw-r--r-- 1 pi   240000000 Apr 25 15:55 GPS-L1-2022-03-27.sigmf-data
+-rw-r--r-- 1 pi    16368000 Mar  3  2014 gioveAandB_short.bin
 
 ** gpssim.bin
 cf https://github.com/osqzss/gps-sdr-sim
@@ -21,3 +13,12 @@ file-type: 2xi16
 ** nov_3_time_18_48_st_ives
 https://github.com/codyd51/gypsum/releases
 file-type: 2xf32
+
+** GPS-L1-2022-03-27.sigmf-data
+source: https://zenodo.org/records/6394603
+complex i16 @4KHz -- not usable just yet
+
+** gioveAandB_short.bin
+http://gfix.dk/matlab-gnss-sdr-book/gnss-signal-records/
+sampling at 16367600Hz -- not usable yet
+one signal sample is stored as one signed byte (int8)

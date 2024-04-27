@@ -32,4 +32,3 @@ pub fn get_2nd_max(v: &Vec<f64>) -> f64 {
     }
     second
 }
-

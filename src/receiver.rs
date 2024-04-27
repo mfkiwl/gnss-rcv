@@ -1,15 +1,12 @@
 use colored::Colorize;
 use rustfft::{num_complex::Complex64, FftPlanner};
-use std::collections::HashSet;
 use std::ops::Mul;
-use std::time::Instant;
 
 use crate::gold_code::gen_code;
 use crate::recording::IQRecording;
-use crate::util::get_max_with_idx;
 use crate::util::get_2nd_max;
+use crate::util::get_max_with_idx;
 
-const NUM_GPS_SATS: usize = 32;
 const PRN_CODE_LEN: usize = 1023;
 const DOPPLER_SPREAD_HZ: u32 = 8 * 1000;
 const DOPPLER_SPREAD_BINS: u32 = 10;
@@ -20,7 +17,7 @@ const PI: f64 = std::f64::consts::PI;
 pub struct GpsReceiver {
     pub iq_recording: IQRecording,
     pub verbose: bool,
-    fft_planner : FftPlanner<f64>,
+    fft_planner: FftPlanner<f64>,
 }
 
 impl GpsReceiver {
@@ -37,7 +34,11 @@ impl GpsReceiver {
         data.iter().map(|x| x / len).collect()
     }
 
-    fn calc_correlation(&mut self, v_antenna: &Vec<Complex64>, prn_code_fft: &Vec<Complex64>) -> Vec<Complex64> {
+    fn calc_correlation(
+        &mut self,
+        v_antenna: &Vec<Complex64>,
+        prn_code_fft: &Vec<Complex64>,
+    ) -> Vec<Complex64> {
         let num_samples = v_antenna.len();
         assert_eq!(v_antenna.len(), prn_code_fft.len());
         let fft_fw = self.fft_planner.plan_fft_forward(num_samples);
@@ -212,22 +213,23 @@ impl GpsReceiver {
     pub fn try_acquisition(
         &mut self,
         off_msec: usize,
-        sat_set: HashSet<usize>,
+        sat_vec: &Vec<usize>,
+        scan: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let num_msec = ACQUISITION_PERIOD_MSEC;
-        let samples = self.iq_recording.get_msec_sample(off_msec, num_msec);
-        let ts = Instant::now();
-        if !sat_set.is_empty() {
-            for id in sat_set {
-                self.try_acquisition_one_sat(&samples, id, num_msec, off_msec);
+        let mut i = 0;
+
+        loop {
+            let samples = self.iq_recording.get_msec_sample(off_msec + i, num_msec);
+            for id in sat_vec {
+                self.try_acquisition_one_sat(&samples, *id, num_msec, off_msec + i);
             }
-        } else {
-            for id in 0..NUM_GPS_SATS {
-                self.try_acquisition_one_sat(&samples, 1 + id, num_msec, off_msec);
+            if !scan {
+                break;
             }
+            i += 10;
         }
 
-        println!("duration: {} msec", ts.elapsed().as_millis());
         Ok(())
     }
 }
