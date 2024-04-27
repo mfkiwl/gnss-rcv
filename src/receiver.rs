@@ -1,5 +1,6 @@
 use colored::Colorize;
 use rustfft::{num_complex::Complex64, FftPlanner};
+use std::collections::HashMap;
 use std::ops::Mul;
 
 use crate::gold_code::gen_code;
@@ -18,6 +19,7 @@ pub struct GpsReceiver {
     pub iq_recording: IQRecording,
     pub verbose: bool,
     fft_planner: FftPlanner<f64>,
+    prn_code_fft_map: HashMap<usize, Vec<Complex64>>,
 }
 
 impl GpsReceiver {
@@ -26,6 +28,7 @@ impl GpsReceiver {
             iq_recording,
             verbose,
             fft_planner: FftPlanner::new(),
+            prn_code_fft_map: HashMap::<usize, Vec<Complex64>>::new(),
         }
     }
 
@@ -66,7 +69,7 @@ impl GpsReceiver {
     fn calc_cross_correlation(
         &mut self,
         iq_vec: &Vec<Complex64>,
-        prn_code: &Vec<Complex64>,
+        sat_id: usize,
         num_msec: usize,
         off_msec: usize,
         estimate_hz: i32,
@@ -80,7 +83,24 @@ impl GpsReceiver {
         let mut best_snr = 0.0;
         let mut best_corr_norm = 0.0;
 
-        let prn_code_fft = self.calc_prn_fft(&prn_code);
+        let prn_code_fft;
+        if !self.prn_code_fft_map.contains_key(&sat_id) {
+            let one_prn_code = gen_code(sat_id);
+            assert_eq!(one_prn_code.len(), PRN_CODE_LEN);
+            let prn_code_upsampled: Vec<_> = one_prn_code
+                .iter()
+                .map(|&x| Complex64 {
+                    re: if x == 0 { -1.0 } else { 1.0 },
+                    im: 0.0,
+                })
+                .flat_map(|x| [x, x])
+                .collect();
+            assert_eq!(prn_code_upsampled.len(), PRN_CODE_LEN * 2); // 1msec worth
+            prn_code_fft = self.calc_prn_fft(&prn_code_upsampled);
+            self.prn_code_fft_map.insert(sat_id, prn_code_fft.clone());
+        } else {
+            prn_code_fft = self.prn_code_fft_map.get(&sat_id).unwrap().clone();
+        }
 
         let lo_hz = estimate_hz - spread_hz as i32;
         let hi_hz = estimate_hz + spread_hz as i32 + 1;
@@ -103,7 +123,6 @@ impl GpsReceiver {
                 let range_hi = (idx + 1) * num_samples_per_prn;
                 let mut iq_vec_sample = Vec::from(&iq_vec[range_lo..range_hi]);
                 assert_eq!(iq_vec_sample.len(), doppler_shift.len());
-                assert_eq!(iq_vec_sample.len(), prn_code.len());
                 assert_eq!(iq_vec_sample.len(), prn_code_fft.len());
 
                 for i in 0..iq_vec_sample.len() {
@@ -157,18 +176,6 @@ impl GpsReceiver {
         off_msec: usize,
     ) {
         assert_eq!(iq_vec.len(), PRN_CODE_LEN * 2 * num_msec);
-        let one_prn_code = gen_code(sat_id);
-        assert_eq!(one_prn_code.len(), PRN_CODE_LEN);
-        let prn_code_upsampled: Vec<_> = one_prn_code
-            .iter()
-            .map(|&x| Complex64 {
-                re: if x == 0 { -1.0 } else { 1.0 },
-                im: 0.0,
-            })
-            .flat_map(|x| [x, x])
-            .collect();
-        assert_eq!(prn_code_upsampled.len(), PRN_CODE_LEN * 2); // 1msec worth
-
         let mut spread_hz = DOPPLER_SPREAD_HZ;
         let mut best_estimate_hz = 0i32;
         let mut best_snr = 0.0f64;
@@ -177,7 +184,7 @@ impl GpsReceiver {
         while spread_hz > DOPPLER_SPREAD_BINS {
             let (estimate_hz, snr, phase_idx) = self.calc_cross_correlation(
                 iq_vec,
-                &prn_code_upsampled,
+                sat_id,
                 num_msec,
                 off_msec,
                 best_estimate_hz,
