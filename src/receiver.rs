@@ -18,7 +18,6 @@ const PI: f64 = std::f64::consts::PI;
 
 pub struct GnssReceiver {
     pub iq_recording: IQRecording,
-    pub verbose: bool,
     fft_planner: FftPlanner<f64>,
     prn_code_fft_map: HashMap<usize, Vec<Complex64>>,
     sat_vec: Vec<usize>,
@@ -30,22 +29,26 @@ pub struct GnssReceiver {
     cached_off_msec_tail: usize,
 }
 
+fn get_num_samples_per_msec() -> usize {
+    PRN_CODE_LEN * 2
+}
+
 impl GnssReceiver {
-    pub fn new(iq_recording: IQRecording, verbose: bool, sat_vec: Vec<usize>) -> Self {
+    pub fn new(iq_recording: IQRecording, off_msec: usize, sat_vec: Vec<usize>) -> Self {
         Self {
             iq_recording,
-            verbose,
             fft_planner: FftPlanner::new(),
             prn_code_fft_map: HashMap::<usize, Vec<Complex64>>::new(),
             sat_vec,
-            off_samples: 0,
-            off_msec: 0,
+            off_samples: off_msec * get_num_samples_per_msec(),
+            off_msec,
             last_acq_off_msec: 0,
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_num_msec: 0,
             cached_off_msec_tail: 0,
         }
     }
+
 
     fn normalize_post_fft(data: &Vec<Complex64>) -> Vec<Complex64> {
         let len = data.len() as f64;
@@ -110,7 +113,7 @@ impl GnssReceiver {
                 })
                 .flat_map(|x| [x, x])
                 .collect();
-            assert_eq!(prn_code_upsampled.len(), PRN_CODE_LEN * 2); // 1msec worth
+            assert_eq!(prn_code_upsampled.len(), get_num_samples_per_msec());
             prn_code_fft = self.calc_prn_fft(&prn_code_upsampled);
             self.prn_code_fft_map.insert(sat_id, prn_code_fft.clone());
         } else {
@@ -122,7 +125,7 @@ impl GnssReceiver {
 
         for doppler_hz in (lo_hz..hi_hz).step_by((spread_hz / DOPPLER_SPREAD_BINS) as usize) {
             let imaginary = -2.0 * PI * doppler_hz as f64;
-            let mut b_corr = vec![0f64; 2046];
+            let mut b_corr = vec![0f64; get_num_samples_per_msec()];
 
             for idx in 0..num_msec {
                 let sample_index = idx * num_samples_per_prn + off_msec;
@@ -149,18 +152,16 @@ impl GnssReceiver {
                     b_corr[i] += corr[i].norm();
                 }
             }
-            if self.verbose {
-                println!(
-                    "  get_cross_correlation: {}-{} Hz -- trying {} Hz",
-                    estimate_hz - spread_hz as i32,
-                    estimate_hz + spread_hz as i32,
-                    doppler_hz,
-                );
-            }
+            log::trace!(
+                "  get_cross_correlation: {}-{} Hz -- trying {} Hz",
+                estimate_hz - spread_hz as i32,
+                estimate_hz + spread_hz as i32,
+                doppler_hz,
+            );
 
             let b_corr_norm = b_corr.iter().map(|&x| x * x).sum::<f64>();
 
-            if b_corr_norm > best_corr_norm || self.verbose {
+            if b_corr_norm > best_corr_norm {
                 let b_corr_second = get_2nd_max(&b_corr);
                 let (idx, b_corr_peak) = get_max_with_idx(&b_corr);
                 assert!(b_corr_peak != 0.0);
@@ -170,21 +171,19 @@ impl GnssReceiver {
                 best_doppler_hz = doppler_hz as i32;
                 best_phase_offset = idx;
                 best_corr_norm = b_corr_norm;
-                if self.verbose {
-                    println!(
-                        "   best_doppler: {} Hz snr: {:+.1} idx={}",
-                        doppler_hz,
-                        b_peak_to_second,
-                        idx / 2
-                    );
-                }
+                log::trace!(
+                    "   best_doppler: {} Hz snr: {:+.1} idx={}",
+                    doppler_hz,
+                    b_peak_to_second,
+                    idx / 2
+                );
             }
         }
         (best_doppler_hz, best_snr, best_phase_offset)
     }
 
     fn try_acquisition_one_sat(&mut self, iq_vec: &Vec<Complex64>, sat_id: usize, off_msec: usize) {
-        assert_eq!(iq_vec.len(), PRN_CODE_LEN * 2 * ACQUISITION_PERIOD_MSEC);
+        assert_eq!(iq_vec.len(), get_num_samples_per_msec() * ACQUISITION_PERIOD_MSEC);
         let mut spread_hz = DOPPLER_SPREAD_HZ;
         let mut best_estimate_hz = 0i32;
         let mut best_snr = 0.0f64;
@@ -207,16 +206,14 @@ impl GnssReceiver {
             best_snr = snr;
             best_phase_idx = phase_idx;
 
-            if self.verbose {
-                let s = format!(
-                    "BEST: sat_id={} -- estimate_hz={} spread_hz={:3} snr={:.3} phase_idx={}",
-                    sat_id, estimate_hz, spread_hz, snr, phase_idx
-                );
-                println!("{}", s.green());
-            }
+            let s = format!(
+                "BEST: sat_id={} -- estimate_hz={} spread_hz={:3} snr={:.3} phase_idx={}",
+                sat_id, estimate_hz, spread_hz, snr, phase_idx
+            );
+            log::debug!("{}", s.green());
         }
         if best_snr >= SNR_THRESHOLD {
-            println!(
+            log::warn!(
                 " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} snr: {}",
                 format!("{:2}", sat_id).yellow(),
                 best_estimate_hz,
@@ -237,11 +234,11 @@ impl GnssReceiver {
 
         let ts = Instant::now();
         let cached_vec_len = self.cached_iq_vec.len();
-        let num_samples = ACQUISITION_PERIOD_MSEC * PRN_CODE_LEN * 2;
+        let num_samples = ACQUISITION_PERIOD_MSEC * get_num_samples_per_msec();
 
         log::warn!(
-            "try_acq: vec_deq_off_msec_tail={} vec_deq_len={}",
-            self.cached_off_msec_tail,
+            "try_acq: cached_off_msec_tail={} cached_vec_len={}",
+            format!("{}", self.cached_off_msec_tail).green(),
             cached_vec_len
         );
 
@@ -256,7 +253,7 @@ impl GnssReceiver {
     }
 
     fn fetch_samples_msec(&mut self, num_msec: usize) -> Result<(), Box<dyn std::error::Error>> {
-        let num_samples = PRN_CODE_LEN * 2 * num_msec;
+        let num_samples = num_msec * get_num_samples_per_msec();
         let mut vec_samples = self
             .iq_recording
             .read_iq_file(self.off_samples, num_samples)?;
@@ -269,7 +266,7 @@ impl GnssReceiver {
 
         if self.cached_num_msec > ACQUISITION_PERIOD_MSEC {
             let num_msec_to_remove = self.cached_num_msec - ACQUISITION_PERIOD_MSEC;
-            let num_samples = num_msec_to_remove * PRN_CODE_LEN * 2;
+            let num_samples = num_msec_to_remove * get_num_samples_per_msec();
             let _ = self.cached_iq_vec.drain(0..num_samples);
             self.cached_num_msec -= num_msec_to_remove;
         }
@@ -277,10 +274,9 @@ impl GnssReceiver {
     }
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let num_msec_per_step = 1;
         log::info!("step: off_msec={}", self.off_msec);
 
-        self.fetch_samples_msec(num_msec_per_step)?;
+        self.fetch_samples_msec(1)?;
         self.try_periodic_acquisition();
 
         Ok(())

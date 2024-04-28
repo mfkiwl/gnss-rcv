@@ -10,8 +10,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
 
-//const BUFFER_SIZE: usize = 128 * 1024;
-
 pub enum IQFileType {
     TypePairFloat32,
     TypePairInt16,

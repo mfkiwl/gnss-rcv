@@ -29,10 +29,10 @@ struct Options {
     sample_rate: usize,
     #[structopt(long, default_value = "0")]
     off_msec: usize,
+    #[structopt(long, default_value = "0")]
+    num_msec: usize,
     #[structopt(long, default_value = "")]
     sats: String,
-    #[structopt(long, short = "v")]
-    verbose: bool,
 }
 
 fn main() -> std::io::Result<()> {
@@ -74,11 +74,16 @@ fn main() -> std::io::Result<()> {
     }
 
     let recording = IQRecording::new(opt.file, opt.sample_rate, opt.iq_file_type);
-    let mut receiver = GnssReceiver::new(recording, opt.verbose, sat_vec);
+    let mut receiver = GnssReceiver::new(recording, opt.off_msec, sat_vec);
+    let mut n = 0;
 
     loop {
         let _ = receiver.process_step();
         if exit_req.load(Ordering::SeqCst) {
+            break;
+        }
+        n += 1;
+        if opt.num_msec != 0 && n > opt.num_msec {
             break;
         }
     }
