@@ -45,7 +45,12 @@ fn main() -> std::io::Result<()> {
         return Ok(());
     }
 
-    env_logger::init();
+    env_logger::Builder::from_default_env()
+        .format_target(false)
+        .format_module_path(false)
+        .format_timestamp_millis()
+        .init();
+
     ctrlc::set_handler(move || {
         exit_req_clone.store(true, Ordering::SeqCst);
     })

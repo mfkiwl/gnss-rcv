@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use crate::gold_code::gen_code;
 use crate::recording::IQRecording;
+use crate::satellite::GnssSatellite;
 use crate::util::get_2nd_max;
 use crate::util::get_max_with_idx;
 
@@ -27,6 +28,7 @@ pub struct GnssReceiver {
     cached_iq_vec: Vec<Complex64>,
     cached_num_msec: usize,
     cached_off_msec_tail: usize,
+    satellites: HashMap<usize, GnssSatellite>,
 }
 
 fn get_num_samples_per_msec() -> usize {
@@ -46,9 +48,9 @@ impl GnssReceiver {
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_num_msec: 0,
             cached_off_msec_tail: 0,
+            satellites: HashMap::<usize, GnssSatellite>::new(),
         }
     }
-
 
     fn normalize_post_fft(data: &Vec<Complex64>) -> Vec<Complex64> {
         let len = data.len() as f64;
@@ -182,8 +184,16 @@ impl GnssReceiver {
         (best_doppler_hz, best_snr, best_phase_offset)
     }
 
-    fn try_acquisition_one_sat(&mut self, iq_vec: &Vec<Complex64>, sat_id: usize, off_msec: usize) {
-        assert_eq!(iq_vec.len(), get_num_samples_per_msec() * ACQUISITION_PERIOD_MSEC);
+    fn try_acquisition_one_sat(
+        &mut self,
+        iq_vec: &Vec<Complex64>,
+        sat_id: usize,
+        off_msec: usize,
+    ) -> Option<(i32, usize, f64)> {
+        assert_eq!(
+            iq_vec.len(),
+            get_num_samples_per_msec() * ACQUISITION_PERIOD_MSEC
+        );
         let mut spread_hz = DOPPLER_SPREAD_HZ;
         let mut best_estimate_hz = 0i32;
         let mut best_snr = 0.0f64;
@@ -213,13 +223,16 @@ impl GnssReceiver {
             log::debug!("{}", s.green());
         }
         if best_snr >= SNR_THRESHOLD {
-            log::warn!(
+            log::info!(
                 " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} snr: {}",
                 format!("{:2}", sat_id).yellow(),
                 best_estimate_hz,
                 best_phase_idx / 2,
                 format!("{:.2}", best_snr).green(),
             );
+            Some((best_estimate_hz, best_phase_idx, best_snr))
+        } else {
+            None
         }
     }
 
@@ -237,7 +250,7 @@ impl GnssReceiver {
         let num_samples = ACQUISITION_PERIOD_MSEC * get_num_samples_per_msec();
 
         log::warn!(
-            "try_acq: cached_off_msec_tail={} cached_vec_len={}",
+            "--- try_acq: cached_off_msec_tail={} cached_vec_len={}",
             format!("{}", self.cached_off_msec_tail).green(),
             cached_vec_len
         );
@@ -245,14 +258,58 @@ impl GnssReceiver {
         let samples = &self.cached_iq_vec[cached_vec_len - num_samples..cached_vec_len].to_vec();
         let samples_off_msec = self.cached_off_msec_tail - ACQUISITION_PERIOD_MSEC;
 
+        let mut new_sats = HashMap::<usize, (i32, usize, f64)>::new();
         for id in self.sat_vec.clone() {
-            self.try_acquisition_one_sat(&samples, id, samples_off_msec);
+            if let Some((doppler_hz, phase, snr)) =
+                self.try_acquisition_one_sat(&samples, id, samples_off_msec)
+            {
+                new_sats.insert(id, (doppler_hz, phase, snr));
+            }
+        }
+        for (id, tuple) in &new_sats {
+            let (doppler_hz, phase_shift, snr) = *tuple;
+            match self.satellites.get_mut(id) {
+                Some(sat) => {
+                    log::warn!(
+                        "sat {}: exists: doppler={} phase_shift={} snr={}",
+                        id,
+                        doppler_hz,
+                        phase_shift,
+                        snr
+                    );
+                    sat.snr = snr;
+                    sat.doppler_hz = doppler_hz;
+                    sat.phase_shift = phase_shift;
+                }
+                None => {
+                    log::warn!(
+                        "{}",
+                        format!(
+                            "sat {}: new: doppler={} phase_shift={} snr={}",
+                            id, doppler_hz, phase_shift, snr
+                        )
+                        .green()
+                    );
+                    let sat = GnssSatellite::new(*id, snr, doppler_hz, phase_shift);
+                    self.satellites.insert(*id, sat);
+                }
+            }
+        }
+        let mut sat_removed = vec![];
+        for id in self.satellites.keys() {
+            if !new_sats.contains_key(&id) {
+                log::warn!("{}", format!("sat {}: disappeared", id).red());
+                sat_removed.push(id.clone());
+            }
+        }
+        for id in sat_removed {
+            self.satellites.remove(&id);
         }
         log::debug!("acquisition: {} msec", ts.elapsed().as_millis());
         self.last_acq_off_msec = self.cached_off_msec_tail;
     }
 
-    fn fetch_samples_msec(&mut self, num_msec: usize) -> Result<(), Box<dyn std::error::Error>> {
+    fn fetch_samples_msec(&mut self, num_msec: usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
         let num_samples = num_msec * get_num_samples_per_msec();
         let mut vec_samples = self
             .iq_recording
@@ -270,14 +327,20 @@ impl GnssReceiver {
             let _ = self.cached_iq_vec.drain(0..num_samples);
             self.cached_num_msec -= num_msec_to_remove;
         }
-        Ok(())
+        let len = self.cached_iq_vec.len();
+        // clone to avoid borrowing issue
+        Ok(self.cached_iq_vec[len - num_samples..len].to_vec())
     }
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        log::info!("step: off_msec={}", self.off_msec);
+        log::info!("process_step: off_msec={}", self.off_msec);
 
-        self.fetch_samples_msec(1)?;
+        let samples = self.fetch_samples_msec(1)?;
         self.try_periodic_acquisition();
+
+        for (_id, sat) in &mut self.satellites {
+            sat.process_samples(&samples);
+        }
 
         Ok(())
     }
