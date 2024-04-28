@@ -22,6 +22,7 @@ pub struct GnssReceiver {
     fft_planner: FftPlanner<f64>,
     prn_code_fft_map: HashMap<usize, Vec<Complex64>>,
     sat_vec: Vec<usize>,
+    off_samples: usize,
     off_msec: usize,
     last_acq_off_msec: usize,
     cached_iq_vec: Vec<Complex64>,
@@ -37,6 +38,7 @@ impl GnssReceiver {
             fft_planner: FftPlanner::new(),
             prn_code_fft_map: HashMap::<usize, Vec<Complex64>>::new(),
             sat_vec,
+            off_samples: 0,
             off_msec: 0,
             last_acq_off_msec: 0,
             cached_iq_vec: Vec::<Complex64>::new(),
@@ -249,28 +251,36 @@ impl GnssReceiver {
         for id in self.sat_vec.clone() {
             self.try_acquisition_one_sat(&samples, id, samples_off_msec);
         }
-        log::warn!("acquisition: {} msec", ts.elapsed().as_millis());
+        log::debug!("acquisition: {} msec", ts.elapsed().as_millis());
         self.last_acq_off_msec = self.cached_off_msec_tail;
     }
 
-    pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let num_msec_per_step = 1;
+    fn fetch_samples_msec(&mut self, num_msec: usize) -> Result<(), Box<dyn std::error::Error>> {
+        let num_samples = PRN_CODE_LEN * 2 * num_msec;
         let mut vec_samples = self
             .iq_recording
-            .get_msec_sample(self.off_msec, num_msec_per_step);
-        log::info!("step: off_msec={}", self.off_msec);
+            .read_iq_file(self.off_samples, num_samples)?;
 
+        self.off_samples += num_samples;
         self.cached_iq_vec.append(&mut vec_samples);
-        self.cached_off_msec_tail += num_msec_per_step;
-        self.cached_num_msec += num_msec_per_step;
-        self.off_msec += num_msec_per_step;
+        self.cached_off_msec_tail += num_msec;
+        self.cached_num_msec += num_msec;
+        self.off_msec += num_msec;
+
         if self.cached_num_msec > ACQUISITION_PERIOD_MSEC {
-            let num_msec_to_remove =  self.cached_num_msec - ACQUISITION_PERIOD_MSEC;
+            let num_msec_to_remove = self.cached_num_msec - ACQUISITION_PERIOD_MSEC;
             let num_samples = num_msec_to_remove * PRN_CODE_LEN * 2;
             let _ = self.cached_iq_vec.drain(0..num_samples);
             self.cached_num_msec -= num_msec_to_remove;
         }
+        Ok(())
+    }
 
+    pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let num_msec_per_step = 1;
+        log::info!("step: off_msec={}", self.off_msec);
+
+        self.fetch_samples_msec(num_msec_per_step)?;
         self.try_periodic_acquisition();
 
         Ok(())

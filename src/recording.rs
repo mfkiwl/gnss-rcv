@@ -3,12 +3,14 @@ use rustfft::num_complex::Complex64;
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
+use std::io::Seek;
+use std::io::SeekFrom;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
 
-const BUFFER_SIZE: usize = 128 * 1024;
+//const BUFFER_SIZE: usize = 128 * 1024;
 
 pub enum IQFileType {
     TypePairFloat32,
@@ -44,7 +46,6 @@ impl fmt::Display for IQFileType {
 pub struct IQRecording {
     pub file_path: PathBuf,
     pub sample_rate: usize,
-    pub iq_vec: Vec<Complex64>,
     pub file_type: IQFileType,
 }
 
@@ -53,15 +54,40 @@ impl IQRecording {
         Self {
             file_path,
             sample_rate,
-            iq_vec: vec![],
             file_type,
         }
     }
-    pub fn read_iq_file(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+
+    fn get_sample_size_bytes(&self) -> usize {
+        match self.file_type {
+            IQFileType::TypePairInt8 => 2 * 1,
+            IQFileType::TypeOneInt8 => 1,
+            IQFileType::TypePairInt16 => 2 * 2,
+            IQFileType::TypePairFloat32 => 2 * 4,
+        }
+    }
+    pub fn read_iq_file(
+        &mut self,
+        off_samples: usize,
+        num_samples: usize,
+    ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
         let file = File::open(self.file_path.clone())?;
-        let mut reader = BufReader::with_capacity(BUFFER_SIZE, &file);
-        let mut n: u64 = 0;
+        let sample_size = self.get_sample_size_bytes();
+        let buf_size = sample_size * num_samples;
+        let mut reader = BufReader::with_capacity(buf_size, &file);
+        let mut n: usize = 0;
         let ts = Instant::now();
+        let mut iq_vec = vec![];
+
+        let off_file = off_samples as i64 * sample_size as i64;
+
+        log::debug!(
+            "read_iq_file: off_samples={} num_samples={}",
+            off_samples,
+            num_samples
+        );
+
+        let _ = reader.seek(SeekFrom::Current(off_file)).unwrap();
 
         loop {
             let buf = reader.fill_buf()?;
@@ -74,28 +100,40 @@ impl IQRecording {
             match self.file_type {
                 IQFileType::TypePairInt8 => {
                     for off in (0..len).step_by(2) {
-                        self.iq_vec.push(Complex64 {
+                        iq_vec.push(Complex64 {
                             re: buf[off + 0] as i8 as f64 / std::i8::MAX as f64,
                             im: buf[off + 1] as i8 as f64 / std::i8::MAX as f64,
                         });
+                        n += 1;
+                        if n >= num_samples {
+                            break;
+                        }
                     }
                 }
                 IQFileType::TypeOneInt8 => {
                     for off in 0..len {
-                        self.iq_vec.push(Complex64 {
+                        iq_vec.push(Complex64 {
                             re: buf[off] as i8 as f64 / std::i8::MAX as f64,
                             im: 0.0,
                         });
+                        n += 1;
+                        if n >= num_samples {
+                            break;
+                        }
                     }
                 }
                 IQFileType::TypePairInt16 => {
                     for off in (0..len).step_by(4) {
                         let i = i16::from_le_bytes([buf[off + 0], buf[off + 1]]);
                         let q = i16::from_le_bytes([buf[off + 2], buf[off + 3]]);
-                        self.iq_vec.push(Complex64 {
+                        iq_vec.push(Complex64 {
                             re: i as f64 / std::i16::MAX as f64,
                             im: q as f64 / std::i16::MAX as f64,
                         });
+                        n += 1;
+                        if n >= num_samples {
+                            break;
+                        }
                     }
                 }
                 IQFileType::TypePairFloat32 => {
@@ -114,52 +152,37 @@ impl IQRecording {
                         ]);
                         assert!(-1.0 <= i && i <= 1.0);
                         assert!(-1.0 <= q && q <= 1.0);
-                        self.iq_vec.push(Complex64 {
+                        iq_vec.push(Complex64 {
                             re: i as f64,
                             im: q as f64,
                         });
+                        n += 1;
+                        if n >= num_samples {
+                            break;
+                        }
                     }
                 }
             }
-            n += 1;
-            if n == 1000 {
+            if n >= num_samples {
                 break;
             }
             reader.consume(len);
         }
+        assert_eq!(n, num_samples);
 
-        println!(
+        log::debug!(
             "num_samples: {} -- {:.1} msec",
-            format!("{}", self.iq_vec.len()).yellow(),
-            self.iq_vec.len() as f64 * 1000.0 / self.sample_rate as f64,
+            format!("{}", iq_vec.len()).yellow(),
+            iq_vec.len() as f64 * 1000.0 / self.sample_rate as f64,
         );
-        let bw = n as f64 * BUFFER_SIZE as f64 / 1024.0 / 1024.0 / ts.elapsed().as_secs_f64();
-        println!(
+        let bw = n as f64 * buf_size as f64 / 1024.0 / 1024.0 / ts.elapsed().as_secs_f64();
+        log::debug!(
             "read_from_file: {} msec -- bandwidth: {:.1} MB/sec -- num_read_ops={}",
             ts.elapsed().as_millis(),
             bw,
             n
         );
 
-        Ok(())
-    }
-
-    pub fn get_msec_sample(&self, off_msec: usize, num_msec: usize) -> Vec<Complex64> {
-        let num_samples_per_msec = self.sample_rate / 1000;
-        let num_samples = num_msec * num_samples_per_msec;
-        let lo = off_msec * num_samples_per_msec;
-        let hi = off_msec * num_samples_per_msec + num_samples;
-
-        log::info!(
-            "get_msec_sample: off_msec={} duration={} msec num_samples={} lo={} hi={}",
-            off_msec,
-            num_msec,
-            num_samples,
-            lo,
-            hi
-        );
-        assert!(hi <= self.iq_vec.len());
-        let w: Vec<_> = self.iq_vec[lo..hi].iter().cloned().collect();
-        w
+        Ok(iq_vec)
     }
 }
