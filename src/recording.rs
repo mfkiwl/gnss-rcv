@@ -11,18 +11,13 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
 
+use crate::types::IQSample;
+
 pub enum IQFileType {
     TypePairFloat32,
     TypePairInt16,
     TypePairInt8,
     TypeOneInt8,
-}
-
-
-#[derive(Default, Clone)]
-pub struct IQSample {
-    pub iq_vec: Vec<Complex64>,
-    off_msec: usize,
 }
 
 impl FromStr for IQFileType {
@@ -203,6 +198,9 @@ impl IQRecording {
             n
         );
 
-        Ok(IQSample{ iq_vec, off_msec: off_samples * 1000 / self.sample_rate })
+        Ok(IQSample {
+            iq_vec,
+            off_msec: off_samples * 1000 / self.sample_rate,
+        })
     }
 }

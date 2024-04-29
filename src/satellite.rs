@@ -1,6 +1,6 @@
 use crate::types::GnssCorrelationParam;
+use crate::types::IQSample;
 use colored::Colorize;
-use rustfft::num_complex::Complex64;
 
 pub struct GnssSatellite {
     prn: usize,
@@ -38,7 +38,11 @@ impl GnssSatellite {
         );
     }
 
-    pub fn process_samples(&mut self, samples: &Vec<Complex64>) {
-        log::debug!("sat-{}: processing {} samples", self.prn, samples.len());
+    pub fn process_samples(&mut self, sample: &IQSample) {
+        log::debug!(
+            "sat-{}: processing {} samples",
+            self.prn,
+            sample.iq_vec.len()
+        );
     }
 }

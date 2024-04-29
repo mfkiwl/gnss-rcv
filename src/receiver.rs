@@ -9,6 +9,7 @@ use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
 use crate::satellite::GnssSatellite;
 use crate::types::GnssCorrelationParam;
+use crate::types::IQSample;
 use crate::util::calc_correlation;
 use crate::util::get_2nd_max;
 use crate::util::get_max_with_idx;
@@ -233,8 +234,8 @@ impl GnssReceiver {
             match self.satellites.get_mut(id) {
                 Some(sat) => sat.update_param(param, samples_off_msec),
                 None => {
-                    self.satellites.insert(*id,
-                            GnssSatellite::new(*id, *param, samples_off_msec));
+                    self.satellites
+                        .insert(*id, GnssSatellite::new(*id, *param, samples_off_msec));
                 }
             }
         }
@@ -255,7 +256,7 @@ impl GnssReceiver {
     fn fetch_samples_msec(
         &mut self,
         num_msec: usize,
-    ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
+    ) -> Result<IQSample, Box<dyn std::error::Error>> {
         let num_samples = num_msec * get_num_samples_per_msec();
         let mut sample = self
             .iq_recording
@@ -274,7 +275,10 @@ impl GnssReceiver {
             self.cached_num_msec -= num_msec_to_remove;
         }
         let len = self.cached_iq_vec.len();
-        Ok(self.cached_iq_vec[len - num_samples..len].to_vec())
+        Ok(IQSample {
+            iq_vec: self.cached_iq_vec[len - num_samples..len].to_vec(),
+            off_msec: self.cached_off_msec_tail - num_msec,
+        })
     }
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
