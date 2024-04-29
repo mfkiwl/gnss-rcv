@@ -231,12 +231,10 @@ impl GnssReceiver {
 
         for (id, param) in &new_sats {
             match self.satellites.get_mut(id) {
-                Some(sat) => {
-                    sat.update_after_new_acq(param, samples_off_msec);
-                }
+                Some(sat) => sat.update_param(param, samples_off_msec),
                 None => {
-                    let sat = GnssSatellite::new(*id, *param, samples_off_msec);
-                    self.satellites.insert(*id, sat);
+                    self.satellites.insert(*id,
+                            GnssSatellite::new(*id, *param, samples_off_msec));
                 }
             }
         }
@@ -259,12 +257,12 @@ impl GnssReceiver {
         num_msec: usize,
     ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
         let num_samples = num_msec * get_num_samples_per_msec();
-        let mut vec_samples = self
+        let mut sample = self
             .iq_recording
             .read_iq_file(self.off_samples, num_samples)?;
 
         self.off_samples += num_samples;
-        self.cached_iq_vec.append(&mut vec_samples);
+        self.cached_iq_vec.append(&mut sample.iq_vec);
         self.cached_off_msec_tail += num_msec;
         self.cached_num_msec += num_msec;
         self.off_msec += num_msec;

@@ -18,6 +18,13 @@ pub enum IQFileType {
     TypeOneInt8,
 }
 
+
+#[derive(Default, Clone)]
+pub struct IQSample {
+    pub iq_vec: Vec<Complex64>,
+    off_msec: usize,
+}
+
 impl FromStr for IQFileType {
     type Err = Box<dyn Error>;
     fn from_str(input: &str) -> Result<IQFileType, Self::Err> {
@@ -80,7 +87,7 @@ impl IQRecording {
         &mut self,
         off_samples: usize,
         num_samples: usize,
-    ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
+    ) -> Result<IQSample, Box<dyn std::error::Error>> {
         let file = File::open(self.file_path.clone())?;
         let sample_size = Self::get_sample_size_bytes(&self.file_type);
         let buf_size = sample_size * num_samples;
@@ -196,6 +203,6 @@ impl IQRecording {
             n
         );
 
-        Ok(iq_vec)
+        Ok(IQSample{ iq_vec, off_msec: off_samples * 1000 / self.sample_rate })
     }
 }

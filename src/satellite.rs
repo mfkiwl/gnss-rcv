@@ -25,7 +25,7 @@ impl GnssSatellite {
         }
     }
 
-    pub fn update_after_new_acq(&mut self, param: &GnssCorrelationParam, off_msec: usize) {
+    pub fn update_param(&mut self, param: &GnssCorrelationParam, off_msec: usize) {
         self.param = *param;
 
         log::warn!(
