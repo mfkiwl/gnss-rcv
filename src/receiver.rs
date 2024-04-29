@@ -1,6 +1,6 @@
-use rustfft::{num_complex::Complex64, FftPlanner};
 use colored::Colorize;
 use rayon::prelude::*;
+use rustfft::{num_complex::Complex64, FftPlanner};
 use std::collections::HashMap;
 use std::ops::Mul;
 use std::time::Instant;
@@ -8,6 +8,7 @@ use std::time::Instant;
 use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
 use crate::satellite::GnssSatellite;
+use crate::types::GnssCorrelationParam;
 use crate::util::calc_correlation;
 use crate::util::get_2nd_max;
 use crate::util::get_max_with_idx;
@@ -30,14 +31,6 @@ pub struct GnssReceiver {
     cached_num_msec: usize,
     cached_off_msec_tail: usize,
     satellites: HashMap<usize, GnssSatellite>,
-}
-
-#[derive(Default)]
-struct GnssCorrelationParam {
-    doppler_hz: i32,
-    phase_offset: usize,
-    snr: f64,
-    corr_norm: f64,
 }
 
 impl GnssReceiver {
@@ -215,7 +208,7 @@ impl GnssReceiver {
 
         let samples = &self.cached_iq_vec[cached_vec_len - num_samples..cached_vec_len].to_vec();
         let samples_off_msec = self.cached_off_msec_tail - ACQUISITION_PERIOD_MSEC;
-        let mut new_sats = HashMap::<usize, (i32, usize, f64)>::new();
+        let mut new_sats = HashMap::<usize, GnssCorrelationParam>::new();
 
         // Perform acquisition on each possible satellite in parallel
         let new_sats_vec_res: Vec<_> = self
@@ -232,19 +225,17 @@ impl GnssReceiver {
         for (i, opt) in new_sats_vec_res.iter().enumerate() {
             let id = self.sat_vec[i];
             if let Some(param) = opt {
-                new_sats.insert(id, (param.doppler_hz, param.phase_offset, param.snr));
+                new_sats.insert(id, *param);
             }
         }
 
-        for (id, tuple) in &new_sats {
-            let (doppler_hz, phase_shift, snr) = *tuple;
+        for (id, param) in &new_sats {
             match self.satellites.get_mut(id) {
                 Some(sat) => {
-                    sat.update_after_new_acq(snr, doppler_hz, phase_shift, samples_off_msec);
+                    sat.update_after_new_acq(param, samples_off_msec);
                 }
                 None => {
-                    let sat =
-                        GnssSatellite::new(*id, snr, doppler_hz, phase_shift, samples_off_msec);
+                    let sat = GnssSatellite::new(*id, *param, samples_off_msec);
                     self.satellites.insert(*id, sat);
                 }
             }
