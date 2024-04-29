@@ -1,16 +1,17 @@
+use rustfft::{num_complex::Complex64, FftPlanner};
 use colored::Colorize;
 use rayon::prelude::*;
-use rustfft::{num_complex::Complex64, FftPlanner};
 use std::collections::HashMap;
 use std::ops::Mul;
 use std::time::Instant;
 
-use crate::constants::PRN_CODE_LEN;
 use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
 use crate::satellite::GnssSatellite;
+use crate::util::calc_correlation;
 use crate::util::get_2nd_max;
 use crate::util::get_max_with_idx;
+use crate::util::get_num_samples_per_msec;
 
 const DOPPLER_SPREAD_HZ: u32 = 8 * 1000;
 const DOPPLER_SPREAD_BINS: u32 = 10;
@@ -31,8 +32,12 @@ pub struct GnssReceiver {
     satellites: HashMap<usize, GnssSatellite>,
 }
 
-fn get_num_samples_per_msec() -> usize {
-    PRN_CODE_LEN * 2
+#[derive(Default)]
+struct GnssCorrelationParam {
+    doppler_hz: i32,
+    phase_offset: usize,
+    snr: f64,
+    corr_norm: f64,
 }
 
 impl GnssReceiver {
@@ -56,34 +61,6 @@ impl GnssReceiver {
         }
     }
 
-    fn normalize_post_fft(data: &Vec<Complex64>) -> Vec<Complex64> {
-        let len = data.len() as f64;
-        data.iter().map(|x| x / len).collect()
-    }
-
-    fn calc_correlation(
-        &self,
-        fft_planner: &mut FftPlanner<f64>,
-        v_antenna: &Vec<Complex64>,
-        prn_code_fft: &Vec<Complex64>,
-    ) -> Vec<Complex64> {
-        let num_samples = v_antenna.len();
-        assert_eq!(v_antenna.len(), prn_code_fft.len());
-        let fft_fw = fft_planner.plan_fft_forward(num_samples);
-
-        let mut v_antenna_buf = v_antenna.clone();
-
-        fft_fw.process(&mut v_antenna_buf);
-
-        let mut v_res: Vec<_> = (0..v_antenna_buf.len())
-            .map(|i| v_antenna_buf[i].mul(prn_code_fft[i].conj()))
-            .collect();
-
-        let fft_bw = fft_planner.plan_fft_inverse(num_samples);
-        fft_bw.process(&mut v_res);
-        Self::normalize_post_fft(&v_res) // not really required
-    }
-
     fn calc_cross_correlation(
         &self,
         fft_planner: &mut FftPlanner<f64>,
@@ -93,15 +70,12 @@ impl GnssReceiver {
         off_msec: usize,
         estimate_hz: i32,
         spread_hz: u32,
-    ) -> (i32, f64, usize) {
+    ) -> GnssCorrelationParam {
         let sample_rate = self.iq_recording.sample_rate;
-        let num_samples_per_prn = PRN_CODE_LEN * 2;
-        assert_eq!(iq_vec.len(), num_samples_per_prn * num_msec);
-        let mut best_doppler_hz: i32 = 0;
-        let mut best_phase_offset = 0;
-        let mut best_snr = 0.0;
-        let mut best_corr_norm = 0.0;
+        let num_samples_per_msec = get_num_samples_per_msec();
+        assert_eq!(iq_vec.len(), num_samples_per_msec * num_msec);
 
+        let mut best_param = GnssCorrelationParam::default();
         let prn_code_fft = self.gold_code.get_fft_code(sat_id);
 
         let lo_hz = estimate_hz - spread_hz as i32;
@@ -112,8 +86,8 @@ impl GnssReceiver {
             let mut b_corr = vec![0f64; get_num_samples_per_msec()];
 
             for idx in 0..num_msec {
-                let sample_index = idx * num_samples_per_prn + off_msec;
-                let doppler_shift: Vec<_> = (0..num_samples_per_prn)
+                let sample_index = idx * num_samples_per_msec + off_msec;
+                let doppler_shift: Vec<_> = (0..num_samples_per_msec)
                     .map(|x| {
                         Complex64::from_polar(
                             1.0,
@@ -121,8 +95,8 @@ impl GnssReceiver {
                         )
                     })
                     .collect();
-                let range_lo = (idx + 0) * num_samples_per_prn;
-                let range_hi = (idx + 1) * num_samples_per_prn;
+                let range_lo = (idx + 0) * num_samples_per_msec;
+                let range_hi = (idx + 1) * num_samples_per_msec;
                 let mut iq_vec_sample = Vec::from(&iq_vec[range_lo..range_hi]);
                 assert_eq!(iq_vec_sample.len(), doppler_shift.len());
                 assert_eq!(iq_vec_sample.len(), prn_code_fft.len());
@@ -131,7 +105,7 @@ impl GnssReceiver {
                     iq_vec_sample[i] = iq_vec_sample[i].mul(doppler_shift[i]);
                 }
 
-                let corr = self.calc_correlation(fft_planner, &iq_vec_sample, &prn_code_fft);
+                let corr = calc_correlation(fft_planner, &iq_vec_sample, &prn_code_fft);
                 for i in 0..corr.len() {
                     b_corr[i] += corr[i].norm();
                 }
@@ -145,7 +119,7 @@ impl GnssReceiver {
 
             let b_corr_norm = b_corr.iter().map(|&x| x * x).sum::<f64>();
 
-            if b_corr_norm > best_corr_norm {
+            if b_corr_norm > best_param.corr_norm {
                 let b_corr_second = get_2nd_max(&b_corr);
                 let (idx, b_corr_peak) = get_max_with_idx(&b_corr);
                 assert!(b_corr_peak != 0.0);
@@ -154,10 +128,10 @@ impl GnssReceiver {
                 //let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
                 let b_peak_to_second =
                     10.0 * ((b_corr_peak - b_corr_second) / b_corr_second).log10();
-                best_snr = b_peak_to_second;
-                best_doppler_hz = doppler_hz as i32;
-                best_phase_offset = idx;
-                best_corr_norm = b_corr_norm;
+                best_param.snr = b_peak_to_second;
+                best_param.doppler_hz = doppler_hz as i32;
+                best_param.phase_offset = idx;
+                best_param.corr_norm = b_corr_norm;
                 log::trace!(
                     "   best_doppler: {} Hz snr: {:+.1} idx={}",
                     doppler_hz,
@@ -166,7 +140,7 @@ impl GnssReceiver {
                 );
             }
         }
-        (best_doppler_hz, best_snr, best_phase_offset)
+        best_param
     }
 
     fn try_acquisition_one_sat(
@@ -175,49 +149,46 @@ impl GnssReceiver {
         iq_vec: &Vec<Complex64>,
         sat_id: usize,
         off_msec: usize,
-    ) -> Option<(i32, usize, f64)> {
+    ) -> Option<GnssCorrelationParam> {
         assert_eq!(
             iq_vec.len(),
             get_num_samples_per_msec() * ACQUISITION_PERIOD_MSEC
         );
         let mut spread_hz = DOPPLER_SPREAD_HZ;
-        let mut best_estimate_hz = 0i32;
-        let mut best_snr = 0.0f64;
-        let mut best_phase_idx = 0;
+        let mut best_param = GnssCorrelationParam::default();
 
         while spread_hz > DOPPLER_SPREAD_BINS {
-            let (estimate_hz, snr, phase_idx) = self.calc_cross_correlation(
+            //let (estimate_hz, snr, phase_idx) = self.calc_cross_correlation(
+            let param = self.calc_cross_correlation(
                 fft_planner,
                 iq_vec,
                 sat_id,
                 ACQUISITION_PERIOD_MSEC,
                 off_msec,
-                best_estimate_hz,
+                best_param.doppler_hz,
                 spread_hz,
             );
-            if snr <= best_snr {
+            if param.snr <= best_param.snr {
                 break;
             }
             spread_hz = spread_hz / DOPPLER_SPREAD_BINS;
-            best_estimate_hz = estimate_hz;
-            best_snr = snr;
-            best_phase_idx = phase_idx;
+            best_param = param;
 
             let s = format!(
                 "BEST: sat_id={} -- estimate_hz={} spread_hz={:3} snr={:.3} phase_idx={}",
-                sat_id, estimate_hz, spread_hz, snr, phase_idx
+                sat_id, best_param.doppler_hz, spread_hz, best_param.snr, best_param.phase_offset
             );
             log::debug!("{}", s.green());
         }
-        if best_snr >= SNR_THRESHOLD {
+        if best_param.snr >= SNR_THRESHOLD {
             log::info!(
                 " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} snr: {}",
                 format!("{:2}", sat_id).yellow(),
-                best_estimate_hz,
-                best_phase_idx / 2,
-                format!("{:.2}", best_snr).green(),
+                best_param.doppler_hz,
+                best_param.phase_offset / 2,
+                format!("{:.2}", best_param.snr).green(),
             );
-            Some((best_estimate_hz, best_phase_idx, best_snr))
+            Some(best_param)
         } else {
             None
         }
@@ -260,8 +231,8 @@ impl GnssReceiver {
         // in the map for easy look-up.
         for (i, opt) in new_sats_vec_res.iter().enumerate() {
             let id = self.sat_vec[i];
-            if let Some((doppler_hz, phase, snr)) = opt {
-                new_sats.insert(id, (*doppler_hz, *phase, *snr));
+            if let Some(param) = opt {
+                new_sats.insert(id, (param.doppler_hz, param.phase_offset, param.snr));
             }
         }
 
@@ -314,7 +285,6 @@ impl GnssReceiver {
             self.cached_num_msec -= num_msec_to_remove;
         }
         let len = self.cached_iq_vec.len();
-        // clone to avoid borrowing issue
         Ok(self.cached_iq_vec[len - num_samples..len].to_vec())
     }
 
