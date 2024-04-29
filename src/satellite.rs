@@ -50,6 +50,6 @@ impl GnssSatellite {
     }
 
     pub fn process_samples(&mut self, samples: &Vec<Complex64>) {
-        log::trace!("sat-{}: processing {} samples", self.prn, samples.len());
+        log::debug!("sat-{}: processing {} samples", self.prn, samples.len());
     }
 }

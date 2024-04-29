@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use structopt::StructOpt;
 
-use gnss_test::gold_code::gen_gold_codes;
+use gnss_test::gold_code::GoldCode;
 use gnss_test::receiver::GnssReceiver;
 use gnss_test::recording::IQFileType;
 use gnss_test::recording::IQRecording;
@@ -15,8 +15,8 @@ const NUM_GPS_SATS: usize = 32;
 #[derive(StructOpt)]
 #[structopt(name = "gnss-test", about = "gnss tester")]
 struct Options {
-    #[structopt(short = "g", help = "generate gold codes")]
-    gen_gold_code: bool,
+    #[structopt(long, help = "print gold codes")]
+    print_gold_code: bool,
     #[structopt(
         short = "f",
         long,
@@ -40,8 +40,8 @@ fn main() -> std::io::Result<()> {
     let exit_req = Arc::new(AtomicBool::new(false));
     let exit_req_clone = exit_req.clone();
 
-    if opt.gen_gold_code {
-        gen_gold_codes();
+    if opt.print_gold_code {
+        GoldCode::print_gold_codes();
         return Ok(());
     }
 
@@ -74,8 +74,9 @@ fn main() -> std::io::Result<()> {
         }
     }
 
+    let gold_code = GoldCode::new();
     let recording = IQRecording::new(opt.file, opt.sample_rate, opt.iq_file_type);
-    let mut receiver = GnssReceiver::new(recording, opt.off_msec, sat_vec);
+    let mut receiver = GnssReceiver::new(gold_code, recording, opt.off_msec, sat_vec);
     let mut n = 0;
     let ts = Instant::now();
 

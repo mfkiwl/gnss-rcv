@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::ops::Mul;
 use std::time::Instant;
 
-use crate::gold_code::gen_code;
+use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
 use crate::satellite::GnssSatellite;
 use crate::util::get_2nd_max;
@@ -19,6 +19,7 @@ const SNR_THRESHOLD: f64 = 3.0;
 const PI: f64 = std::f64::consts::PI;
 
 pub struct GnssReceiver {
+    gold_code: GoldCode,
     pub iq_recording: IQRecording,
     sat_vec: Vec<usize>,
     off_samples: usize,
@@ -35,8 +36,9 @@ fn get_num_samples_per_msec() -> usize {
 }
 
 impl GnssReceiver {
-    pub fn new(iq_recording: IQRecording, off_msec: usize, sat_vec: Vec<usize>) -> Self {
+    pub fn new(gold_code: GoldCode, iq_recording: IQRecording, off_msec: usize, sat_vec: Vec<usize>) -> Self {
         Self {
+            gold_code,
             iq_recording,
             sat_vec,
             off_samples: off_msec * get_num_samples_per_msec(),
@@ -77,21 +79,9 @@ impl GnssReceiver {
         Self::normalize_post_fft(&v_res) // not really required
     }
 
-    fn calc_prn_fft(
-        &self,
-        fft_planner: &mut FftPlanner<f64>,
-        v_prn: &Vec<Complex64>,
-    ) -> Vec<Complex64> {
-        let fft_fw = fft_planner.plan_fft_forward(v_prn.len());
-        let mut v_prn_buf = v_prn.clone();
-        fft_fw.process(&mut v_prn_buf);
-        v_prn_buf
-    }
-
     fn calc_cross_correlation(
         &self,
         fft_planner: &mut FftPlanner<f64>,
-        prn_code_fft_map: &mut HashMap<usize, Vec<Complex64>>,
         iq_vec: &Vec<Complex64>,
         sat_id: usize,
         num_msec: usize,
@@ -107,24 +97,7 @@ impl GnssReceiver {
         let mut best_snr = 0.0;
         let mut best_corr_norm = 0.0;
 
-        let prn_code_fft;
-        if !prn_code_fft_map.contains_key(&sat_id) {
-            let one_prn_code = gen_code(sat_id);
-            assert_eq!(one_prn_code.len(), PRN_CODE_LEN);
-            let prn_code_upsampled: Vec<_> = one_prn_code
-                .iter()
-                .map(|&x| Complex64 {
-                    re: if x == 0 { -1.0 } else { 1.0 },
-                    im: 0.0,
-                })
-                .flat_map(|x| [x, x])
-                .collect();
-            assert_eq!(prn_code_upsampled.len(), get_num_samples_per_msec());
-            prn_code_fft = self.calc_prn_fft(fft_planner, &prn_code_upsampled);
-            prn_code_fft_map.insert(sat_id, prn_code_fft.clone());
-        } else {
-            prn_code_fft = prn_code_fft_map.get(&sat_id).unwrap().clone();
-        }
+        let prn_code_fft = self.gold_code.get_fft_code(sat_id);
 
         let lo_hz = estimate_hz - spread_hz as i32;
         let hi_hz = estimate_hz + spread_hz as i32 + 1;
@@ -194,7 +167,6 @@ impl GnssReceiver {
     fn try_acquisition_one_sat(
         &self,
         fft_planner: &mut FftPlanner<f64>,
-        prn_code_fft_map: &mut HashMap<usize, Vec<Complex64>>,
         iq_vec: &Vec<Complex64>,
         sat_id: usize,
         off_msec: usize,
@@ -211,7 +183,6 @@ impl GnssReceiver {
         while spread_hz > DOPPLER_SPREAD_BINS {
             let (estimate_hz, snr, phase_idx) = self.calc_cross_correlation(
                 fft_planner,
-                prn_code_fft_map,
                 iq_vec,
                 sat_id,
                 ACQUISITION_PERIOD_MSEC,
@@ -276,10 +247,8 @@ impl GnssReceiver {
             .par_iter()
             .map(|&id| {
                 let mut fft_planner: FftPlanner<f64> = FftPlanner::new();
-                let mut prn_code_fft_map = HashMap::<usize, Vec<Complex64>>::new();
                 self.try_acquisition_one_sat(
                     &mut fft_planner,
-                    &mut prn_code_fft_map,
                     &samples,
                     id,
                     samples_off_msec,
