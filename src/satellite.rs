@@ -1,6 +1,11 @@
+use rustfft::num_complex::Complex64;
+use colored::Colorize;
+
 use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
-use colored::Colorize;
+use crate::util::get_num_samples_per_msec;
+
+const PI: f64 = std::f64::consts::PI;
 
 pub struct GnssSatellite {
     prn: usize,
@@ -39,10 +44,19 @@ impl GnssSatellite {
     }
 
     pub fn process_samples(&mut self, sample: &IQSample) {
-        log::debug!(
-            "sat-{}: processing {} samples",
+        log::info!(
+            "sat-{}: processing: off_msec={} num_samples={}: doppler={} phase={}",
             self.prn,
-            sample.iq_vec.len()
+            sample.off_msec,
+            sample.iq_vec.len(),
+            self.param.doppler_hz,
+            self.param.phase_offset,
         );
+        let img = -2.0 * PI * self.param.doppler_hz as f64;
+
+        let num_samples_per_msec = get_num_samples_per_msec();
+        let doppler_shift: Vec<_> = (0..num_samples_per_msec)
+            .map(|x| Complex64::from_polar( 1.0, img * x as f64 / sample.sample_rate as f64))
+            .collect();
     }
 }

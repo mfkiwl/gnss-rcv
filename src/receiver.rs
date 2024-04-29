@@ -58,16 +58,14 @@ impl GnssReceiver {
     fn calc_cross_correlation(
         &self,
         fft_planner: &mut FftPlanner<f64>,
-        iq_vec: &Vec<Complex64>,
+        sample: &IQSample,
         sat_id: usize,
         num_msec: usize,
-        off_msec: usize,
         estimate_hz: i32,
         spread_hz: u32,
     ) -> GnssCorrelationParam {
-        let sample_rate = self.iq_recording.sample_rate;
         let num_samples_per_msec = get_num_samples_per_msec();
-        assert_eq!(iq_vec.len(), num_samples_per_msec * num_msec);
+        assert_eq!(sample.iq_vec.len(), num_samples_per_msec * num_msec);
 
         let mut best_param = GnssCorrelationParam::default();
         let prn_code_fft = self.gold_code.get_fft_code(sat_id);
@@ -80,18 +78,18 @@ impl GnssReceiver {
             let mut b_corr = vec![0f64; get_num_samples_per_msec()];
 
             for idx in 0..num_msec {
-                let sample_index = idx * num_samples_per_msec + off_msec;
+                let sample_index = idx * num_samples_per_msec + sample.off_msec;
                 let doppler_shift: Vec<_> = (0..num_samples_per_msec)
                     .map(|x| {
                         Complex64::from_polar(
                             1.0,
-                            imaginary * (x + sample_index) as f64 / sample_rate as f64,
+                            imaginary * (x + sample_index) as f64 / sample.sample_rate as f64,
                         )
                     })
                     .collect();
                 let range_lo = (idx + 0) * num_samples_per_msec;
                 let range_hi = (idx + 1) * num_samples_per_msec;
-                let mut iq_vec_sample = Vec::from(&iq_vec[range_lo..range_hi]);
+                let mut iq_vec_sample = Vec::from(&sample.iq_vec[range_lo..range_hi]);
                 assert_eq!(iq_vec_sample.len(), doppler_shift.len());
                 assert_eq!(iq_vec_sample.len(), prn_code_fft.len());
 
@@ -140,25 +138,22 @@ impl GnssReceiver {
     fn try_acquisition_one_sat(
         &self,
         fft_planner: &mut FftPlanner<f64>,
-        iq_vec: &Vec<Complex64>,
         sat_id: usize,
-        off_msec: usize,
+        sample: &IQSample,
     ) -> Option<GnssCorrelationParam> {
         assert_eq!(
-            iq_vec.len(),
+            sample.iq_vec.len(),
             get_num_samples_per_msec() * ACQUISITION_PERIOD_MSEC
         );
         let mut spread_hz = DOPPLER_SPREAD_HZ;
         let mut best_param = GnssCorrelationParam::default();
 
         while spread_hz > DOPPLER_SPREAD_BINS {
-            //let (estimate_hz, snr, phase_idx) = self.calc_cross_correlation(
             let param = self.calc_cross_correlation(
                 fft_planner,
-                iq_vec,
+                sample,
                 sat_id,
                 ACQUISITION_PERIOD_MSEC,
-                off_msec,
                 best_param.doppler_hz,
                 spread_hz,
             );
@@ -168,11 +163,10 @@ impl GnssReceiver {
             spread_hz = spread_hz / DOPPLER_SPREAD_BINS;
             best_param = param;
 
-            let s = format!(
+            log::debug!(
                 "BEST: sat_id={} -- estimate_hz={} spread_hz={:3} snr={:.3} phase_idx={}",
                 sat_id, best_param.doppler_hz, spread_hz, best_param.snr, best_param.phase_offset
             );
-            log::debug!("{}", s.green());
         }
         if best_param.snr >= SNR_THRESHOLD {
             log::info!(
@@ -207,9 +201,15 @@ impl GnssReceiver {
             cached_vec_len
         );
 
-        let samples = &self.cached_iq_vec[cached_vec_len - num_samples..cached_vec_len].to_vec();
+        let samples_vec = self.cached_iq_vec[cached_vec_len - num_samples..cached_vec_len].to_vec();
         let samples_off_msec = self.cached_off_msec_tail - ACQUISITION_PERIOD_MSEC;
         let mut new_sats = HashMap::<usize, GnssCorrelationParam>::new();
+
+        let sample = IQSample {
+            iq_vec: samples_vec,
+            off_msec: samples_off_msec,
+            sample_rate: self.iq_recording.sample_rate,
+        };
 
         // Perform acquisition on each possible satellite in parallel
         let new_sats_vec_res: Vec<_> = self
@@ -217,7 +217,7 @@ impl GnssReceiver {
             .par_iter()
             .map(|&id| {
                 let mut fft_planner: FftPlanner<f64> = FftPlanner::new();
-                self.try_acquisition_one_sat(&mut fft_planner, &samples, id, samples_off_msec)
+                self.try_acquisition_one_sat(&mut fft_planner, id, &sample)
             })
             .collect();
 
@@ -262,6 +262,8 @@ impl GnssReceiver {
             .iq_recording
             .read_iq_file(self.off_samples, num_samples)?;
 
+        assert!(sample.sample_rate > 0);
+
         self.off_samples += num_samples;
         self.cached_iq_vec.append(&mut sample.iq_vec);
         self.cached_off_msec_tail += num_msec;
@@ -278,6 +280,7 @@ impl GnssReceiver {
         Ok(IQSample {
             iq_vec: self.cached_iq_vec[len - num_samples..len].to_vec(),
             off_msec: self.cached_off_msec_tail - num_msec,
+            sample_rate: sample.sample_rate,
         })
     }
 

@@ -201,6 +201,7 @@ impl IQRecording {
         Ok(IQSample {
             iq_vec,
             off_msec: off_samples * 1000 / self.sample_rate,
+            sample_rate: self.sample_rate,
         })
     }
 }
