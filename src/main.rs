@@ -3,6 +3,7 @@ use colored::Colorize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use structopt::StructOpt;
 
 use gnss_test::gold_code::gen_gold_codes;
@@ -57,7 +58,7 @@ fn main() -> std::io::Result<()> {
     .expect("Error setting Ctrl-C handler");
 
     println!(
-        "gnss-test: {} -- {} {} sample_rate: {} off_msec={}",
+        "gnss-test: {} -- {} {} sampling: {} off_msec={} num_msec={}",
         opt.file.to_str().unwrap().green(),
         ByteSize::b(opt.file.metadata().unwrap().len())
             .to_string_as(false)
@@ -65,6 +66,7 @@ fn main() -> std::io::Result<()> {
         opt.iq_file_type,
         format!("{} KHz", opt.sample_rate / 1000).bold(),
         opt.off_msec,
+        opt.num_msec,
     );
 
     let mut sat_vec: Vec<usize> = vec![];
@@ -81,6 +83,7 @@ fn main() -> std::io::Result<()> {
     let recording = IQRecording::new(opt.file, opt.sample_rate, opt.iq_file_type);
     let mut receiver = GnssReceiver::new(recording, opt.off_msec, sat_vec);
     let mut n = 0;
+    let ts = Instant::now();
 
     loop {
         let _ = receiver.process_step();
@@ -93,7 +96,7 @@ fn main() -> std::io::Result<()> {
         }
     }
 
-    log::warn!("GNSS terminating.");
+    log::warn!("GNSS terminating: {:.2} sec", ts.elapsed().as_secs_f32());
 
     Ok(())
 }

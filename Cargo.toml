@@ -18,3 +18,4 @@ bytesize = {version = "1.2.0", features = ["serde"]}
 serde = { version = "1.0.198", features = ["derive"] }
 log = "0.4.21"
 ctrlc = "3.4.4"
+rayon = "1.10.0"

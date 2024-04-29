@@ -1,4 +1,5 @@
 use colored::Colorize;
+use rayon::prelude::*;
 use rustfft::{num_complex::Complex64, FftPlanner};
 use std::collections::HashMap;
 use std::ops::Mul;
@@ -14,13 +15,11 @@ const PRN_CODE_LEN: usize = 1023;
 const DOPPLER_SPREAD_HZ: u32 = 8 * 1000;
 const DOPPLER_SPREAD_BINS: u32 = 10;
 const ACQUISITION_PERIOD_MSEC: usize = 10;
-const SNR_THRESHOLD: f64 = 1.0;
+const SNR_THRESHOLD: f64 = 3.0;
 const PI: f64 = std::f64::consts::PI;
 
 pub struct GnssReceiver {
     pub iq_recording: IQRecording,
-    fft_planner: FftPlanner<f64>,
-    prn_code_fft_map: HashMap<usize, Vec<Complex64>>,
     sat_vec: Vec<usize>,
     off_samples: usize,
     off_msec: usize,
@@ -39,8 +38,6 @@ impl GnssReceiver {
     pub fn new(iq_recording: IQRecording, off_msec: usize, sat_vec: Vec<usize>) -> Self {
         Self {
             iq_recording,
-            fft_planner: FftPlanner::new(),
-            prn_code_fft_map: HashMap::<usize, Vec<Complex64>>::new(),
             sat_vec,
             off_samples: off_msec * get_num_samples_per_msec(),
             off_msec,
@@ -58,13 +55,14 @@ impl GnssReceiver {
     }
 
     fn calc_correlation(
-        &mut self,
+        &self,
+        fft_planner: &mut FftPlanner<f64>,
         v_antenna: &Vec<Complex64>,
         prn_code_fft: &Vec<Complex64>,
     ) -> Vec<Complex64> {
         let num_samples = v_antenna.len();
         assert_eq!(v_antenna.len(), prn_code_fft.len());
-        let fft_fw = self.fft_planner.plan_fft_forward(num_samples);
+        let fft_fw = fft_planner.plan_fft_forward(num_samples);
 
         let mut v_antenna_buf = v_antenna.clone();
 
@@ -74,20 +72,26 @@ impl GnssReceiver {
             .map(|i| v_antenna_buf[i].mul(prn_code_fft[i].conj()))
             .collect();
 
-        let fft_bw = self.fft_planner.plan_fft_inverse(num_samples);
+        let fft_bw = fft_planner.plan_fft_inverse(num_samples);
         fft_bw.process(&mut v_res);
         Self::normalize_post_fft(&v_res) // not really required
     }
 
-    fn calc_prn_fft(&mut self, v_prn: &Vec<Complex64>) -> Vec<Complex64> {
-        let fft_fw = self.fft_planner.plan_fft_forward(v_prn.len());
+    fn calc_prn_fft(
+        &self,
+        fft_planner: &mut FftPlanner<f64>,
+        v_prn: &Vec<Complex64>,
+    ) -> Vec<Complex64> {
+        let fft_fw = fft_planner.plan_fft_forward(v_prn.len());
         let mut v_prn_buf = v_prn.clone();
         fft_fw.process(&mut v_prn_buf);
         v_prn_buf
     }
 
     fn calc_cross_correlation(
-        &mut self,
+        &self,
+        fft_planner: &mut FftPlanner<f64>,
+        prn_code_fft_map: &mut HashMap<usize, Vec<Complex64>>,
         iq_vec: &Vec<Complex64>,
         sat_id: usize,
         num_msec: usize,
@@ -104,7 +108,7 @@ impl GnssReceiver {
         let mut best_corr_norm = 0.0;
 
         let prn_code_fft;
-        if !self.prn_code_fft_map.contains_key(&sat_id) {
+        if !prn_code_fft_map.contains_key(&sat_id) {
             let one_prn_code = gen_code(sat_id);
             assert_eq!(one_prn_code.len(), PRN_CODE_LEN);
             let prn_code_upsampled: Vec<_> = one_prn_code
@@ -116,10 +120,10 @@ impl GnssReceiver {
                 .flat_map(|x| [x, x])
                 .collect();
             assert_eq!(prn_code_upsampled.len(), get_num_samples_per_msec());
-            prn_code_fft = self.calc_prn_fft(&prn_code_upsampled);
-            self.prn_code_fft_map.insert(sat_id, prn_code_fft.clone());
+            prn_code_fft = self.calc_prn_fft(fft_planner, &prn_code_upsampled);
+            prn_code_fft_map.insert(sat_id, prn_code_fft.clone());
         } else {
-            prn_code_fft = self.prn_code_fft_map.get(&sat_id).unwrap().clone();
+            prn_code_fft = prn_code_fft_map.get(&sat_id).unwrap().clone();
         }
 
         let lo_hz = estimate_hz - spread_hz as i32;
@@ -149,7 +153,7 @@ impl GnssReceiver {
                     iq_vec_sample[i] = iq_vec_sample[i].mul(doppler_shift[i]);
                 }
 
-                let corr = self.calc_correlation(&iq_vec_sample, &prn_code_fft);
+                let corr = self.calc_correlation(fft_planner, &iq_vec_sample, &prn_code_fft);
                 for i in 0..corr.len() {
                     b_corr[i] += corr[i].norm();
                 }
@@ -185,7 +189,9 @@ impl GnssReceiver {
     }
 
     fn try_acquisition_one_sat(
-        &mut self,
+        &self,
+        fft_planner: &mut FftPlanner<f64>,
+        prn_code_fft_map: &mut HashMap<usize, Vec<Complex64>>,
         iq_vec: &Vec<Complex64>,
         sat_id: usize,
         off_msec: usize,
@@ -201,6 +207,8 @@ impl GnssReceiver {
 
         while spread_hz > DOPPLER_SPREAD_BINS {
             let (estimate_hz, snr, phase_idx) = self.calc_cross_correlation(
+                fft_planner,
+                prn_code_fft_map,
                 iq_vec,
                 sat_id,
                 ACQUISITION_PERIOD_MSEC,
@@ -257,40 +265,43 @@ impl GnssReceiver {
 
         let samples = &self.cached_iq_vec[cached_vec_len - num_samples..cached_vec_len].to_vec();
         let samples_off_msec = self.cached_off_msec_tail - ACQUISITION_PERIOD_MSEC;
-
         let mut new_sats = HashMap::<usize, (i32, usize, f64)>::new();
-        for id in self.sat_vec.clone() {
-            if let Some((doppler_hz, phase, snr)) =
-                self.try_acquisition_one_sat(&samples, id, samples_off_msec)
-            {
-                new_sats.insert(id, (doppler_hz, phase, snr));
+
+        // Perform acquisition on each possible satellite in parallel
+        let new_sats_vec_res: Vec<_> = self
+            .sat_vec
+            .par_iter()
+            .map(|&id| {
+                let mut fft_planner: FftPlanner<f64> = FftPlanner::new();
+                let mut prn_code_fft_map = HashMap::<usize, Vec<Complex64>>::new();
+                self.try_acquisition_one_sat(
+                    &mut fft_planner,
+                    &mut prn_code_fft_map,
+                    &samples,
+                    id,
+                    samples_off_msec,
+                )
+            })
+            .collect();
+
+        // So far we've only collected an array of options, let's insert them
+        // in the map for easy look-up.
+        for (i, opt) in new_sats_vec_res.iter().enumerate() {
+            let id = self.sat_vec[i];
+            if let Some((doppler_hz, phase, snr)) = opt {
+                new_sats.insert(id, (*doppler_hz, *phase, *snr));
             }
         }
+
         for (id, tuple) in &new_sats {
             let (doppler_hz, phase_shift, snr) = *tuple;
             match self.satellites.get_mut(id) {
                 Some(sat) => {
-                    log::warn!(
-                        "sat {}: exists: doppler={} phase_shift={} snr={}",
-                        id,
-                        doppler_hz,
-                        phase_shift,
-                        snr
-                    );
-                    sat.snr = snr;
-                    sat.doppler_hz = doppler_hz;
-                    sat.phase_shift = phase_shift;
+                    sat.update_after_new_acq(snr, doppler_hz, phase_shift, samples_off_msec);
                 }
                 None => {
-                    log::warn!(
-                        "{}",
-                        format!(
-                            "sat {}: new: doppler={} phase_shift={} snr={}",
-                            id, doppler_hz, phase_shift, snr
-                        )
-                        .green()
-                    );
-                    let sat = GnssSatellite::new(*id, snr, doppler_hz, phase_shift);
+                    let sat =
+                        GnssSatellite::new(*id, snr, doppler_hz, phase_shift, samples_off_msec);
                     self.satellites.insert(*id, sat);
                 }
             }
@@ -309,7 +320,10 @@ impl GnssReceiver {
         self.last_acq_off_msec = self.cached_off_msec_tail;
     }
 
-    fn fetch_samples_msec(&mut self, num_msec: usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
+    fn fetch_samples_msec(
+        &mut self,
+        num_msec: usize,
+    ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
         let num_samples = num_msec * get_num_samples_per_msec();
         let mut vec_samples = self
             .iq_recording
