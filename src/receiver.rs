@@ -5,13 +5,13 @@ use std::collections::HashMap;
 use std::ops::Mul;
 use std::time::Instant;
 
+use crate::constants::PRN_CODE_LEN;
 use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
 use crate::satellite::GnssSatellite;
 use crate::util::get_2nd_max;
 use crate::util::get_max_with_idx;
 
-const PRN_CODE_LEN: usize = 1023;
 const DOPPLER_SPREAD_HZ: u32 = 8 * 1000;
 const DOPPLER_SPREAD_BINS: u32 = 10;
 const ACQUISITION_PERIOD_MSEC: usize = 10;
@@ -36,7 +36,12 @@ fn get_num_samples_per_msec() -> usize {
 }
 
 impl GnssReceiver {
-    pub fn new(gold_code: GoldCode, iq_recording: IQRecording, off_msec: usize, sat_vec: Vec<usize>) -> Self {
+    pub fn new(
+        gold_code: GoldCode,
+        iq_recording: IQRecording,
+        off_msec: usize,
+        sat_vec: Vec<usize>,
+    ) -> Self {
         Self {
             gold_code,
             iq_recording,
@@ -247,12 +252,7 @@ impl GnssReceiver {
             .par_iter()
             .map(|&id| {
                 let mut fft_planner: FftPlanner<f64> = FftPlanner::new();
-                self.try_acquisition_one_sat(
-                    &mut fft_planner,
-                    &samples,
-                    id,
-                    samples_off_msec,
-                )
+                self.try_acquisition_one_sat(&mut fft_planner, &samples, id, samples_off_msec)
             })
             .collect();
 

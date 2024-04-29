@@ -5,12 +5,11 @@ use std::sync::Arc;
 use std::time::Instant;
 use structopt::StructOpt;
 
+use gnss_test::constants::NUM_GPS_SATS;
 use gnss_test::gold_code::GoldCode;
 use gnss_test::receiver::GnssReceiver;
 use gnss_test::recording::IQFileType;
 use gnss_test::recording::IQRecording;
-
-const NUM_GPS_SATS: usize = 32;
 
 #[derive(StructOpt)]
 #[structopt(name = "gnss-test", about = "gnss tester")]

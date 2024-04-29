@@ -1,3 +1,4 @@
+pub mod constants;
 pub mod gold_code;
 pub mod receiver;
 pub mod recording;
