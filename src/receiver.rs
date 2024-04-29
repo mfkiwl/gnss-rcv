@@ -172,7 +172,10 @@ impl GnssReceiver {
                 let (idx, b_corr_peak) = get_max_with_idx(&b_corr);
                 assert!(b_corr_peak != 0.0);
                 assert!(b_corr_second != 0.0);
-                let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
+                // XXX: this results in faster acquisition and processing. Why?
+                //let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
+                let b_peak_to_second =
+                    10.0 * ((b_corr_peak - b_corr_second) / b_corr_second).log10();
                 best_snr = b_peak_to_second;
                 best_doppler_hz = doppler_hz as i32;
                 best_phase_offset = idx;

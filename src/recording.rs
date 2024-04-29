@@ -1,3 +1,4 @@
+use bytesize::ByteSize;
 use colored::Colorize;
 use rustfft::num_complex::Complex64;
 use std::error::Error;
@@ -49,6 +50,17 @@ pub struct IQRecording {
 
 impl IQRecording {
     pub fn new(file_path: PathBuf, sample_rate: usize, file_type: IQFileType) -> Self {
+        let file_size = file_path.metadata().unwrap().len();
+        let sample_size = Self::get_sample_size_bytes(&file_type) as f64;
+        let recording_duration_sec = file_size as f64 / sample_rate as f64 / sample_size;
+
+        println!(
+            "file: {} -- {} {} duration: {:.1} secs",
+            file_path.display().to_string().green(),
+            file_type,
+            ByteSize::b(file_size).to_string_as(false).bold(),
+            recording_duration_sec
+        );
         Self {
             file_path,
             sample_rate,
@@ -56,8 +68,8 @@ impl IQRecording {
         }
     }
 
-    fn get_sample_size_bytes(&self) -> usize {
-        match self.file_type {
+    fn get_sample_size_bytes(file_type: &IQFileType) -> usize {
+        match file_type {
             IQFileType::TypePairInt8 => 2 * 1,
             IQFileType::TypeOneInt8 => 1,
             IQFileType::TypePairInt16 => 2 * 2,
@@ -70,7 +82,7 @@ impl IQRecording {
         num_samples: usize,
     ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
         let file = File::open(self.file_path.clone())?;
-        let sample_size = self.get_sample_size_bytes();
+        let sample_size = Self::get_sample_size_bytes(&self.file_type);
         let buf_size = sample_size * num_samples;
         let mut reader = BufReader::with_capacity(buf_size, &file);
         let mut n: usize = 0;
@@ -165,6 +177,9 @@ impl IQRecording {
                 break;
             }
             reader.consume(len);
+        }
+        if n < num_samples {
+            return Err("end of file".into());
         }
         assert_eq!(n, num_samples);
 

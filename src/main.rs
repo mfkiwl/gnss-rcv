@@ -1,4 +1,3 @@
-use bytesize::ByteSize;
 use colored::Colorize;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -58,12 +57,7 @@ fn main() -> std::io::Result<()> {
     .expect("Error setting Ctrl-C handler");
 
     println!(
-        "gnss-test: {} -- {} {} sampling: {} off_msec={} num_msec={}",
-        opt.file.to_str().unwrap().green(),
-        ByteSize::b(opt.file.metadata().unwrap().len())
-            .to_string_as(false)
-            .bold(),
-        opt.iq_file_type,
+        "gnss-test: sampling: {} off_msec={} num_msec={}",
         format!("{} KHz", opt.sample_rate / 1000).bold(),
         opt.off_msec,
         opt.num_msec,
@@ -86,7 +80,9 @@ fn main() -> std::io::Result<()> {
     let ts = Instant::now();
 
     loop {
-        let _ = receiver.process_step();
+        if receiver.process_step().is_err() {
+            break;
+        }
         if exit_req.load(Ordering::SeqCst) {
             break;
         }
