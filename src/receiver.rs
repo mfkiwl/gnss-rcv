@@ -27,7 +27,6 @@ pub struct GnssReceiver {
     pub iq_recording: IQRecording,
     sat_vec: Vec<usize>,
     off_samples: usize,
-    off_msec: usize,
     last_acq_ts_sec: f64,
     cached_iq_vec: Vec<Complex64>,
     cached_num_msec: usize,
@@ -47,7 +46,6 @@ impl GnssReceiver {
             iq_recording,
             sat_vec,
             off_samples: off_msec * get_num_samples_per_msec(),
-            off_msec,
             last_acq_ts_sec: 0.0,
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_num_msec: 0,
@@ -273,7 +271,6 @@ impl GnssReceiver {
         self.cached_iq_vec.append(&mut sample.iq_vec);
         self.cached_ts_sec_tail += num_msec as f64 / 1000.0;
         self.cached_num_msec += num_msec;
-        self.off_msec += num_msec;
 
         if self.cached_num_msec > ACQUISITION_WINDOW_MSEC {
             let num_msec_to_remove = self.cached_num_msec - ACQUISITION_WINDOW_MSEC;
@@ -290,8 +287,6 @@ impl GnssReceiver {
     }
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        log::info!("process_step: off_msec={}", self.off_msec);
-
         let samples = self.fetch_samples_msec(1)?;
         self.try_periodic_acquisition();
 
