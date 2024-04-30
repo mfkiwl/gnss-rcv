@@ -55,7 +55,7 @@ fn main() -> std::io::Result<()> {
     })
     .expect("Error setting Ctrl-C handler");
 
-    println!(
+    log::warn!(
         "gnss-test: sampling: {} off_msec={} num_msec={}",
         format!("{} KHz", opt.sample_rate / 1000).bold(),
         opt.off_msec,
