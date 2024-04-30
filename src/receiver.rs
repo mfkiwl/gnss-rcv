@@ -2,7 +2,6 @@ use colored::Colorize;
 use rayon::prelude::*;
 use rustfft::{num_complex::Complex64, FftPlanner};
 use std::collections::HashMap;
-use std::ops::Mul;
 use std::time::Instant;
 
 use crate::gold_code::GoldCode;
@@ -11,6 +10,7 @@ use crate::satellite::GnssSatellite;
 use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
 use crate::util::calc_correlation;
+use crate::util::doppler_shift;
 use crate::util::get_2nd_max;
 use crate::util::get_max_with_idx;
 use crate::util::get_num_samples_per_msec;
@@ -20,17 +20,16 @@ const DOPPLER_SPREAD_BINS: u32 = 10;
 const ACQUISITION_WINDOW_MSEC: usize = 10; // acquire on 10msec of data
 const ACQUISITION_PERIOD_SEC: f64 = 3.0; // run acquisition every 3sec
 const SNR_THRESHOLD: f64 = 3.0;
-const PI: f64 = std::f64::consts::PI;
 
 pub struct GnssReceiver {
     gold_code: GoldCode,
     pub iq_recording: IQRecording,
     sat_vec: Vec<usize>,
     off_samples: usize,
-    last_acq_ts_sec: f64,
     cached_iq_vec: Vec<Complex64>,
     cached_num_msec: usize,
     cached_ts_sec_tail: f64,
+    last_acq_ts_sec: f64,
     satellites: HashMap<usize, GnssSatellite>,
 }
 
@@ -73,48 +72,34 @@ impl GnssReceiver {
         let hi_hz = estimate_hz + spread_hz as i32 + 1;
 
         for doppler_hz in (lo_hz..hi_hz).step_by((spread_hz / DOPPLER_SPREAD_BINS) as usize) {
-            let imaginary = -2.0 * PI * doppler_hz as f64;
             let mut b_corr = vec![0f64; get_num_samples_per_msec()];
 
             for idx in 0..num_msec {
-                let sample_index = idx * num_samples_per_msec;
-                let doppler_shift: Vec<_> = (0..num_samples_per_msec)
-                    .map(|x| {
-                        Complex64::from_polar(
-                            1.0,
-                            imaginary * (x + sample_index) as f64 / sample.sample_rate as f64,
-                        )
-                    })
-                    .collect();
                 let range_lo = (idx + 0) * num_samples_per_msec;
                 let range_hi = (idx + 1) * num_samples_per_msec;
                 let mut iq_vec_sample = Vec::from(&sample.iq_vec[range_lo..range_hi]);
-                assert_eq!(iq_vec_sample.len(), doppler_shift.len());
                 assert_eq!(iq_vec_sample.len(), prn_code_fft.len());
 
-                for i in 0..iq_vec_sample.len() {
-                    iq_vec_sample[i] = iq_vec_sample[i].mul(doppler_shift[i]);
-                }
+                let shift_sample_sec =
+                    idx as f64 * num_samples_per_msec as f64 / sample.sample_rate as f64;
+                doppler_shift(
+                    doppler_hz,
+                    shift_sample_sec,
+                    &mut iq_vec_sample,
+                    sample.sample_rate,
+                );
 
                 let corr = calc_correlation(fft_planner, &iq_vec_sample, &prn_code_fft);
                 for i in 0..corr.len() {
                     b_corr[i] += corr[i].norm();
                 }
             }
-            log::trace!(
-                "  get_cross_correlation: {}-{} Hz -- trying {} Hz",
-                estimate_hz - spread_hz as i32,
-                estimate_hz + spread_hz as i32,
-                doppler_hz,
-            );
 
             let b_corr_norm = b_corr.iter().map(|&x| x * x).sum::<f64>();
 
             if b_corr_norm > best_param.corr_norm {
                 let b_corr_second = get_2nd_max(&b_corr);
                 let (idx, b_corr_peak) = get_max_with_idx(&b_corr);
-                assert!(b_corr_peak != 0.0);
-                assert!(b_corr_second != 0.0);
                 // XXX: this results in faster acquisition and processing. Why?
                 //let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
                 let b_peak_to_second =
@@ -123,12 +108,6 @@ impl GnssReceiver {
                 best_param.doppler_hz = doppler_hz as i32;
                 best_param.phase_offset = idx;
                 best_param.corr_norm = b_corr_norm;
-                log::trace!(
-                    "   best_doppler: {} Hz snr: {:+.1} idx={}",
-                    doppler_hz,
-                    b_peak_to_second,
-                    idx / 2
-                );
             }
         }
         best_param
@@ -199,7 +178,7 @@ impl GnssReceiver {
         let num_samples = ACQUISITION_WINDOW_MSEC * get_num_samples_per_msec();
 
         log::warn!(
-            "--- try_acq: cached_ts_sec_tail={:3} sec cached_vec_len={}",
+            "--- try_acq: cached_ts_sec_tail={:.3} sec cached_vec_len={}",
             format!("{}", self.cached_ts_sec_tail).green(),
             cached_vec_len
         );

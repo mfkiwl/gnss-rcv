@@ -3,6 +3,8 @@ use std::ops::Mul;
 
 use crate::constants::PRN_CODE_LEN;
 
+const PI: f64 = std::f64::consts::PI;
+
 pub fn norm_square(v: &Vec<Complex64>) -> f64 {
     v.iter().map(|&x| x.norm_sqr()).sum::<f64>()
 }
@@ -66,4 +68,24 @@ pub fn calc_correlation(
     fft_bw.process(&mut v_res);
     normalize_post_fft(&mut v_res); // not really required
     v_res
+}
+
+pub fn doppler_shift(
+    doppler_hz: i32,
+    off_sec: f64,
+    iq_vec: &mut Vec<Complex64>,
+    sample_rate: usize,
+) {
+    let imaginary = -2.0 * PI * doppler_hz as f64;
+    let sample_rate_f64 = sample_rate as f64;
+    let doppler_shift: Vec<Complex64> = (0..iq_vec.len())
+        .map(|x| x as f64)
+        .map(|y| Complex64::from_polar(1.0, imaginary * (y / sample_rate_f64 + off_sec)))
+        .collect();
+
+    assert_eq!(iq_vec.len(), doppler_shift.len());
+
+    for i in 0..iq_vec.len() {
+        iq_vec[i] = iq_vec[i].mul(doppler_shift[i]);
+    }
 }
