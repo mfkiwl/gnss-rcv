@@ -40,9 +40,9 @@ pub fn get_2nd_max(v: &Vec<f64>) -> f64 {
     second
 }
 
-fn normalize_post_fft(data: &Vec<Complex64>) -> Vec<Complex64> {
+fn normalize_post_fft(data: &mut Vec<Complex64>) {
     let len = data.len() as f64;
-    data.iter().map(|x| x / len).collect()
+    data.iter_mut().for_each(|x| *x /= len);
 }
 
 pub fn calc_correlation(
@@ -64,5 +64,6 @@ pub fn calc_correlation(
 
     let fft_bw = fft_planner.plan_fft_inverse(num_samples);
     fft_bw.process(&mut v_res);
-    normalize_post_fft(&v_res) // not really required
+    normalize_post_fft(&mut v_res); // not really required
+    v_res
 }

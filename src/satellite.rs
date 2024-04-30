@@ -1,5 +1,5 @@
-use rustfft::num_complex::Complex64;
 use colored::Colorize;
+use rustfft::num_complex::Complex64;
 
 use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
@@ -10,11 +10,11 @@ const PI: f64 = std::f64::consts::PI;
 pub struct GnssSatellite {
     prn: usize,
     pub param: GnssCorrelationParam,
-    creation_ts_msec: usize,
+    creation_ts_sec: f64,
 }
 
 impl GnssSatellite {
-    pub fn new(prn: usize, param: GnssCorrelationParam, off_msec: usize) -> Self {
+    pub fn new(prn: usize, param: GnssCorrelationParam, ts_sec: f64) -> Self {
         log::warn!(
             "{}",
             format!(
@@ -26,17 +26,17 @@ impl GnssSatellite {
         Self {
             prn,
             param,
-            creation_ts_msec: off_msec,
+            creation_ts_sec: ts_sec,
         }
     }
 
-    pub fn update_param(&mut self, param: &GnssCorrelationParam, off_msec: usize) {
+    pub fn update_param(&mut self, param: &GnssCorrelationParam, ts_sec: f64) {
         self.param = *param;
 
         log::warn!(
-            "sat {}: exists: age={} msec -- doppler_hz={} phase_shift={} snr={:.2}",
+            "sat {}: exists: age={:.3} sec -- doppler_hz={} phase_shift={} snr={:.2}",
             self.prn,
-            off_msec - self.creation_ts_msec,
+            ts_sec - self.creation_ts_sec,
             param.doppler_hz,
             param.phase_offset,
             param.snr
@@ -45,9 +45,9 @@ impl GnssSatellite {
 
     pub fn process_samples(&mut self, sample: &IQSample) {
         log::info!(
-            "sat-{}: processing: off_msec={} num_samples={}: doppler={} phase={}",
+            "sat-{}: processing: ts_sec={:.4} sec num_samples={}: doppler={} phase={}",
             self.prn,
-            sample.off_msec,
+            sample.ts_sec,
             sample.iq_vec.len(),
             self.param.doppler_hz,
             self.param.phase_offset,
@@ -56,7 +56,7 @@ impl GnssSatellite {
 
         let num_samples_per_msec = get_num_samples_per_msec();
         let doppler_shift: Vec<_> = (0..num_samples_per_msec)
-            .map(|x| Complex64::from_polar( 1.0, img * x as f64 / sample.sample_rate as f64))
+            .map(|x| Complex64::from_polar(1.0, img * x as f64 / sample.sample_rate as f64))
             .collect();
     }
 }

@@ -17,7 +17,8 @@ use crate::util::get_num_samples_per_msec;
 
 const DOPPLER_SPREAD_HZ: u32 = 8 * 1000;
 const DOPPLER_SPREAD_BINS: u32 = 10;
-const ACQUISITION_PERIOD_MSEC: usize = 10;
+const ACQUISITION_WINDOW_MSEC: usize = 10; // acquire on 10msec of data
+const ACQUISITION_PERIOD_SEC: f64 = 3.0; // run acquisition every 3sec
 const SNR_THRESHOLD: f64 = 3.0;
 const PI: f64 = std::f64::consts::PI;
 
@@ -27,10 +28,10 @@ pub struct GnssReceiver {
     sat_vec: Vec<usize>,
     off_samples: usize,
     off_msec: usize,
-    last_acq_off_msec: usize,
+    last_acq_ts_sec: f64,
     cached_iq_vec: Vec<Complex64>,
     cached_num_msec: usize,
-    cached_off_msec_tail: usize,
+    cached_ts_sec_tail: f64,
     satellites: HashMap<usize, GnssSatellite>,
 }
 
@@ -47,10 +48,10 @@ impl GnssReceiver {
             sat_vec,
             off_samples: off_msec * get_num_samples_per_msec(),
             off_msec,
-            last_acq_off_msec: 0,
+            last_acq_ts_sec: 0.0,
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_num_msec: 0,
-            cached_off_msec_tail: 0,
+            cached_ts_sec_tail: 0.0,
             satellites: HashMap::<usize, GnssSatellite>::new(),
         }
     }
@@ -78,7 +79,7 @@ impl GnssReceiver {
             let mut b_corr = vec![0f64; get_num_samples_per_msec()];
 
             for idx in 0..num_msec {
-                let sample_index = idx * num_samples_per_msec + sample.off_msec;
+                let sample_index = idx * num_samples_per_msec;
                 let doppler_shift: Vec<_> = (0..num_samples_per_msec)
                     .map(|x| {
                         Complex64::from_polar(
@@ -143,7 +144,7 @@ impl GnssReceiver {
     ) -> Option<GnssCorrelationParam> {
         assert_eq!(
             sample.iq_vec.len(),
-            get_num_samples_per_msec() * ACQUISITION_PERIOD_MSEC
+            get_num_samples_per_msec() * ACQUISITION_WINDOW_MSEC
         );
         let mut spread_hz = DOPPLER_SPREAD_HZ;
         let mut best_param = GnssCorrelationParam::default();
@@ -153,7 +154,7 @@ impl GnssReceiver {
                 fft_planner,
                 sample,
                 sat_id,
-                ACQUISITION_PERIOD_MSEC,
+                ACQUISITION_WINDOW_MSEC,
                 best_param.doppler_hz,
                 spread_hz,
             );
@@ -165,7 +166,11 @@ impl GnssReceiver {
 
             log::debug!(
                 "BEST: sat_id={} -- estimate_hz={} spread_hz={:3} snr={:.3} phase_idx={}",
-                sat_id, best_param.doppler_hz, spread_hz, best_param.snr, best_param.phase_offset
+                sat_id,
+                best_param.doppler_hz,
+                spread_hz,
+                best_param.snr,
+                best_param.phase_offset
             );
         }
         if best_param.snr >= SNR_THRESHOLD {
@@ -183,31 +188,31 @@ impl GnssReceiver {
     }
 
     fn try_periodic_acquisition(&mut self) {
-        if self.cached_num_msec < ACQUISITION_PERIOD_MSEC {
+        if self.cached_num_msec < ACQUISITION_WINDOW_MSEC {
             return;
         }
 
-        if self.cached_off_msec_tail < self.last_acq_off_msec + ACQUISITION_PERIOD_MSEC {
+        if self.cached_ts_sec_tail < self.last_acq_ts_sec + ACQUISITION_PERIOD_SEC {
             return;
         }
 
         let ts = Instant::now();
         let cached_vec_len = self.cached_iq_vec.len();
-        let num_samples = ACQUISITION_PERIOD_MSEC * get_num_samples_per_msec();
+        let num_samples = ACQUISITION_WINDOW_MSEC * get_num_samples_per_msec();
 
         log::warn!(
-            "--- try_acq: cached_off_msec_tail={} cached_vec_len={}",
-            format!("{}", self.cached_off_msec_tail).green(),
+            "--- try_acq: cached_ts_sec_tail={:3} sec cached_vec_len={}",
+            format!("{}", self.cached_ts_sec_tail).green(),
             cached_vec_len
         );
 
         let samples_vec = self.cached_iq_vec[cached_vec_len - num_samples..cached_vec_len].to_vec();
-        let samples_off_msec = self.cached_off_msec_tail - ACQUISITION_PERIOD_MSEC;
+        let samples_ts_sec = self.cached_ts_sec_tail - ACQUISITION_WINDOW_MSEC as f64 / 1000.0;
         let mut new_sats = HashMap::<usize, GnssCorrelationParam>::new();
 
         let sample = IQSample {
             iq_vec: samples_vec,
-            off_msec: samples_off_msec,
+            ts_sec: samples_ts_sec,
             sample_rate: self.iq_recording.sample_rate,
         };
 
@@ -232,10 +237,10 @@ impl GnssReceiver {
 
         for (id, param) in &new_sats {
             match self.satellites.get_mut(id) {
-                Some(sat) => sat.update_param(param, samples_off_msec),
+                Some(sat) => sat.update_param(param, samples_ts_sec),
                 None => {
                     self.satellites
-                        .insert(*id, GnssSatellite::new(*id, *param, samples_off_msec));
+                        .insert(*id, GnssSatellite::new(*id, *param, samples_ts_sec));
                 }
             }
         }
@@ -250,7 +255,7 @@ impl GnssReceiver {
             self.satellites.remove(&id);
         }
         log::debug!("acquisition: {} msec", ts.elapsed().as_millis());
-        self.last_acq_off_msec = self.cached_off_msec_tail;
+        self.last_acq_ts_sec = self.cached_ts_sec_tail;
     }
 
     fn fetch_samples_msec(
@@ -266,12 +271,12 @@ impl GnssReceiver {
 
         self.off_samples += num_samples;
         self.cached_iq_vec.append(&mut sample.iq_vec);
-        self.cached_off_msec_tail += num_msec;
+        self.cached_ts_sec_tail += num_msec as f64 / 1000.0;
         self.cached_num_msec += num_msec;
         self.off_msec += num_msec;
 
-        if self.cached_num_msec > ACQUISITION_PERIOD_MSEC {
-            let num_msec_to_remove = self.cached_num_msec - ACQUISITION_PERIOD_MSEC;
+        if self.cached_num_msec > ACQUISITION_WINDOW_MSEC {
+            let num_msec_to_remove = self.cached_num_msec - ACQUISITION_WINDOW_MSEC;
             let num_samples = num_msec_to_remove * get_num_samples_per_msec();
             let _ = self.cached_iq_vec.drain(0..num_samples);
             self.cached_num_msec -= num_msec_to_remove;
@@ -279,7 +284,7 @@ impl GnssReceiver {
         let len = self.cached_iq_vec.len();
         Ok(IQSample {
             iq_vec: self.cached_iq_vec[len - num_samples..len].to_vec(),
-            off_msec: self.cached_off_msec_tail - num_msec,
+            ts_sec: self.cached_ts_sec_tail - num_msec as f64 / 1000.0,
             sample_rate: sample.sample_rate,
         })
     }

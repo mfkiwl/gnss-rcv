@@ -200,7 +200,7 @@ impl IQRecording {
 
         Ok(IQSample {
             iq_vec,
-            off_msec: off_samples * 1000 / self.sample_rate,
+            ts_sec: off_samples as f64 / self.sample_rate as f64,
             sample_rate: self.sample_rate,
         })
     }
