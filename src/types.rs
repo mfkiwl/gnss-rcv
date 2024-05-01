@@ -4,6 +4,7 @@ use rustfft::num_complex::Complex64;
 pub struct GnssCorrelationParam {
     pub doppler_hz: i32,
     pub phase_offset: usize,
+    pub carrier_phase_shift: f64,
     pub snr: f64,
     pub corr_norm: f64,
 }

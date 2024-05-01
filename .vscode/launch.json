@@ -1,27 +1,19 @@
 {
-    // Utilisez IntelliSense pour en savoir plus sur les attributs possibles.
-    // Pointez pour afficher la description des attributs existants.
-    // Pour plus d'informations, visitez : https://go.microsoft.com/fwlink/?linkid=830387
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-        
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'gnss-test'",
-            "initCommands": [
-                "settings set target.disable-aslr false"
-            ]
+            "name": "Build release",
             "cargo": {
                 "args": [
                     "build",
                     "--bin=gnss-test",
-                    "--package=gnss-test"
-                ],
-                "filter": {
-                    "name": "gnss-test",
-                    "kind": "bin"
-                }
+                    "--release",
+                ]
             },
             "args": [],
             "cwd": "${workspaceFolder}"
@@ -29,20 +21,21 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'gnss-test'",
+            "name": "Run release",
             "cargo": {
                 "args": [
-                    "test",
-                    "--no-run",
+                    "run",
                     "--bin=gnss-test",
-                    "--package=gnss-test"
+                    "--release",
                 ],
                 "filter": {
                     "name": "gnss-test",
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": [
+                "--num-msecs 50000",
+            ],
             "cwd": "${workspaceFolder}"
         }
     ]

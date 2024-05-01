@@ -4,9 +4,9 @@ use rustfft::{num_complex::Complex64, FftPlanner};
 use std::collections::HashMap;
 use std::time::Instant;
 
+use crate::acquisition::try_acquisition_one_sat;
 use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
-use crate::acquisition::try_acquisition_one_sat;
 use crate::satellite::GnssSatellite;
 use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
@@ -99,8 +99,11 @@ impl GnssReceiver {
             match self.satellites.get_mut(id) {
                 Some(sat) => sat.update_param(param, samples_ts_sec),
                 None => {
-                    self.satellites
-                        .insert(*id, GnssSatellite::new(*id, *param, samples_ts_sec));
+                    let prn_code_fft = self.gold_code.get_fft_code(*id);
+                    self.satellites.insert(
+                        *id,
+                        GnssSatellite::new(*id, prn_code_fft, *param, samples_ts_sec),
+                    );
                 }
             }
         }
