@@ -4,3 +4,4 @@ Cargo.lock
 *bin
 resources/*
 gnss.log
+images/

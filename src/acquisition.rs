@@ -66,7 +66,7 @@ fn find_best_doppler_shift_correlation(
     assert_eq!(sample.iq_vec.len(), num_samples_per_msec * num_msec);
 
     let mut best_param = GnssCorrelationParam::default();
-    let prn_code_fft = gold_code.get_fft_code(sat_id);
+    let prn_code_fft = gold_code.get_prn_code_fft(sat_id);
 
     let lo_hz = estimate_hz - spread_hz as i32;
     let hi_hz = estimate_hz + spread_hz as i32 + 1;

@@ -84,7 +84,7 @@ impl GoldCode {
         }
     }
 
-    pub fn get_fft_code(&self, prn: usize) -> Vec<Complex64> {
+    pub fn get_prn_code_fft(&self, prn: usize) -> Vec<Complex64> {
         self.prn_code_fft_map.get(&prn).unwrap().clone()
     }
 

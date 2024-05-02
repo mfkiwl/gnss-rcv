@@ -100,9 +100,10 @@ impl GnssReceiver {
                 Some(sat) => sat.update_param(param, samples_ts_sec),
                 None => {
                     let prn_code = self.gold_code.get_prn_code_upsampled_complex(*id);
+                    let prn_code_fft = self.gold_code.get_prn_code_fft(*id);
                     self.satellites.insert(
                         *id,
-                        GnssSatellite::new(*id, prn_code, *param, samples_ts_sec),
+                        GnssSatellite::new(*id, prn_code, prn_code_fft, *param, samples_ts_sec),
                     );
                 }
             }

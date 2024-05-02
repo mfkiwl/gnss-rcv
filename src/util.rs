@@ -13,6 +13,17 @@ pub fn norm(v: &Vec<Complex64>) -> f64 {
     norm_square(v).sqrt()
 }
 
+pub fn get_normalized_correlation_strength(corr: &Vec<f64>) -> f64 {
+    let (peak_idx, peak_val) = get_max_with_idx(corr);
+    let mut all_but_peak = 0.0;
+    for i in 0..corr.len() {
+        if i != peak_idx {
+            all_but_peak += corr[i];
+        }
+    }
+    peak_val / (all_but_peak / (corr.len() - 1) as f64)
+}
+
 pub fn get_max_with_idx(v: &Vec<f64>) -> (usize, f64) {
     let mut max = 0.0f64;
     let mut idx = 0;
