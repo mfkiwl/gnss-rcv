@@ -70,16 +70,17 @@ impl GnssSatellite {
         }
         if max_idx.abs_diff(self.param.phase_offset) > 3 {
             log::warn!(
-                "sat-{}: code tracking error: peak at: {} but phase_offset={}",
+                "sat-{}: {}: peak at: {} but phase_offset={}",
                 self.prn,
+                format!("XXX code tracking error").red(),
                 max_idx,
                 self.param.phase_offset,
             );
-            assert!(false)
         }
     }
 
     pub fn process_samples(&mut self, sample: &IQSample) {
+        let vec_len = sample.iq_vec.len();
         log::info!(
             "sat-{}: processing: ts_sec={:.4} sec num_samples={}: doppler={} phase={}",
             self.prn,
@@ -94,10 +95,10 @@ impl GnssSatellite {
             sample.ts_sec,
             -self.param.carrier_phase_shift,
             sample.sample_rate,
-            sample.iq_vec.len(),
+            vec_len,
         );
 
-        for i in 0..signal.len() {
+        for i in 0..vec_len {
             signal[i] = signal[i].mul(sample.iq_vec[i]);
         }
 
@@ -106,8 +107,12 @@ impl GnssSatellite {
         let mut prn_code_early = self.prn_code.clone();
         let mut prn_code_late = self.prn_code.clone();
 
-        prn_code_early.rotate_right(self.param.phase_offset - 1);
-        prn_code_late.rotate_right(self.param.phase_offset + 1);
+        if self.param.phase_offset >= 1 {
+            prn_code_early.rotate_right(self.param.phase_offset - 1);
+        } else {
+            prn_code_early.rotate_left(1);
+        }
+        prn_code_late.rotate_right((self.param.phase_offset + 1) % vec_len);
 
         let corr_early = correlate_vec(&doppler_shifted_samples, &prn_code_early);
         let corr_late = correlate_vec(&doppler_shifted_samples, &prn_code_late);
@@ -119,9 +124,10 @@ impl GnssSatellite {
             self.phase_offset_f64 += get_num_samples_per_msec() as f64;
         }
         self.phase_offset_f64 = self.phase_offset_f64 % get_num_samples_per_msec() as f64;
-        self.param.phase_offset = self.phase_offset_f64.round() as usize;
+        self.param.phase_offset =
+            self.phase_offset_f64.round() as usize % get_num_samples_per_msec();
 
-        // only verify tracking error every second
+        // verify tracking error every second
         if (sample.ts_sec - sample.ts_sec.round() as f64).abs() < 0.001 {
             self.verify_correlation_peak(doppler_shifted_samples);
         }

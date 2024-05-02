@@ -1,4 +1,5 @@
 use colored::Colorize;
+use coredump::register_panic_handler;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -50,6 +51,7 @@ fn main() -> std::io::Result<()> {
         .format_timestamp_millis()
         .init();
 
+    register_panic_handler().unwrap();
     ctrlc::set_handler(move || {
         exit_req_clone.store(true, Ordering::SeqCst);
     })
