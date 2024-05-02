@@ -47,6 +47,14 @@ fn normalize_post_fft(data: &mut Vec<Complex64>) {
     data.iter_mut().for_each(|x| *x /= len);
 }
 
+pub fn correlate_vec(a: &Vec<Complex64>, b: &Vec<Complex64>) -> Complex64 {
+    let mut sum = Complex64 { re: 0.0, im: 0.0 };
+    for i in 0..a.len() {
+        sum += a[i].mul(b[i].conj());
+    }
+    sum
+}
+
 pub fn calc_correlation(
     fft_planner: &mut FftPlanner<f64>,
     v_antenna: &Vec<Complex64>,
@@ -70,22 +78,38 @@ pub fn calc_correlation(
     v_res
 }
 
+pub fn doppler_shifted_carrier(
+    doppler_hz: i32,
+    off_sec: f64,
+    carrier_phase_shift: f64,
+    sample_rate: usize,
+    len: usize,
+) -> Vec<Complex64> {
+    let imaginary = -2.0 * PI * doppler_hz as f64;
+    let sample_rate_f64 = sample_rate as f64;
+    let carrier: Vec<Complex64> = (0..len)
+        .map(|x| x as f64)
+        .map(|y| {
+            Complex64::from_polar(
+                1.0,
+                imaginary * (y / sample_rate_f64 + off_sec) + carrier_phase_shift,
+            )
+        })
+        .collect();
+    carrier
+}
+
 pub fn doppler_shift(
     doppler_hz: i32,
     off_sec: f64,
     iq_vec: &mut Vec<Complex64>,
     sample_rate: usize,
 ) {
-    let imaginary = -2.0 * PI * doppler_hz as f64;
-    let sample_rate_f64 = sample_rate as f64;
-    let doppler_shift: Vec<Complex64> = (0..iq_vec.len())
-        .map(|x| x as f64)
-        .map(|y| Complex64::from_polar(1.0, imaginary * (y / sample_rate_f64 + off_sec)))
-        .collect();
+    let carrier = doppler_shifted_carrier(doppler_hz, off_sec, 0.0, sample_rate, iq_vec.len());
 
-    assert_eq!(iq_vec.len(), doppler_shift.len());
+    assert_eq!(iq_vec.len(), carrier.len());
 
     for i in 0..iq_vec.len() {
-        iq_vec[i] = iq_vec[i].mul(doppler_shift[i]);
+        iq_vec[i] = iq_vec[i].mul(carrier[i]);
     }
 }

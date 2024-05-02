@@ -56,6 +56,10 @@ impl GoldCode {
         s
     }
 
+    pub fn get_prn_code_upsampled_complex(&mut self, prn: usize) -> Vec<Complex64> {
+        self.upscaled_codes_complex[prn - 1].clone()
+    }
+
     pub fn init(&mut self) {
         let mut fft_planner: FftPlanner<f64> = FftPlanner::new();
 

@@ -99,10 +99,10 @@ impl GnssReceiver {
             match self.satellites.get_mut(id) {
                 Some(sat) => sat.update_param(param, samples_ts_sec),
                 None => {
-                    let prn_code_fft = self.gold_code.get_fft_code(*id);
+                    let prn_code = self.gold_code.get_prn_code_upsampled_complex(*id);
                     self.satellites.insert(
                         *id,
-                        GnssSatellite::new(*id, prn_code_fft, *param, samples_ts_sec),
+                        GnssSatellite::new(*id, prn_code, *param, samples_ts_sec),
                     );
                 }
             }
@@ -142,6 +142,7 @@ impl GnssReceiver {
             let num_samples = num_msec_to_remove * get_num_samples_per_msec();
             let _ = self.cached_iq_vec.drain(0..num_samples);
             self.cached_num_msec -= num_msec_to_remove;
+            assert_eq!(self.cached_num_msec, ACQUISITION_WINDOW_MSEC);
         }
         let len = self.cached_iq_vec.len();
         Ok(IQSample {

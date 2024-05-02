@@ -87,7 +87,7 @@ fn main() -> std::io::Result<()> {
             break;
         }
         n += 1;
-        if opt.num_msec != 0 && n > opt.num_msec {
+        if opt.num_msec != 0 && n >= opt.num_msec {
             break;
         }
     }
