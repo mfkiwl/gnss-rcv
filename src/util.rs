@@ -114,9 +114,16 @@ pub fn doppler_shift(
     doppler_hz: i32,
     off_sec: f64,
     iq_vec: &mut Vec<Complex64>,
+    carrier_phase_shift: f64,
     sample_rate: usize,
 ) {
-    let carrier = doppler_shifted_carrier(doppler_hz, off_sec, 0.0, sample_rate, iq_vec.len());
+    let carrier = doppler_shifted_carrier(
+        doppler_hz,
+        off_sec,
+        carrier_phase_shift,
+        sample_rate,
+        iq_vec.len(),
+    );
 
     assert_eq!(iq_vec.len(), carrier.len());
 

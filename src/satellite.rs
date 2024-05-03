@@ -4,14 +4,13 @@ use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
 use crate::util::calc_correlation;
 use crate::util::correlate_vec;
-use crate::util::doppler_shifted_carrier;
+use crate::util::doppler_shift;
 use crate::util::get_max_with_idx;
 use crate::util::get_normalized_correlation_strength;
 use crate::util::get_num_samples_per_msec;
 use colored::Colorize;
 use rustfft::num_complex::Complex64;
 use rustfft::FftPlanner;
-use std::ops::Mul;
 
 pub struct GnssSatellite {
     prn: usize,
@@ -19,7 +18,7 @@ pub struct GnssSatellite {
     phase_offset_f64: f64,
     creation_ts_sec: f64,
     prn_code: Vec<Complex64>,
-    prn_code_fft: Vec<Complex64>,
+    _prn_code_fft: Vec<Complex64>,
     fft_planner: FftPlanner<f64>,
     correlation_peaks_rolling_buffer: Vec<Complex64>,
     phase_offset_rolling_buffer: Vec<f64>,
@@ -52,7 +51,7 @@ impl GnssSatellite {
         Self {
             prn,
             prn_code,
-            prn_code_fft,
+            _prn_code_fft: prn_code_fft,
             param,
             phase_offset_f64: param.phase_offset as f64,
             creation_ts_sec: ts_sec,
@@ -76,15 +75,23 @@ impl GnssSatellite {
     }
 
     fn plot_doppler_shift(&self) {
-        let file_name = format!("images/sat-{}-doppler-shift.png", self.prn);
-        let root_area = BitMapBackend::new(&file_name, (600, 400)).into_drawing_area();
+        let file_name = format!("plots/sat-{}-doppler-shift.png", self.prn);
+        let root_area = BitMapBackend::new(&file_name, (400, 400)).into_drawing_area();
         root_area.fill(&WHITE).unwrap();
+
+        let x_max = self.phase_offset_rolling_buffer.len() as f64 * 0.001;
+
+        let mut y_max =
+            self.phase_offset_rolling_buffer
+                .iter()
+                .fold(0.0, |acc, v| if *v > acc { *v } else { acc });
+        y_max += 200.0;
 
         let mut ctx = ChartBuilder::on(&root_area)
             .set_label_area_size(LabelAreaPosition::Left, 40)
             .set_label_area_size(LabelAreaPosition::Bottom, 40)
             .caption(format!("sat {}", self.prn), ("sans-serif", 40))
-            .build_cartesian_2d(0.0..10.0, 0.0..2046.0)
+            .build_cartesian_2d(0.0..x_max, 0.0..y_max)
             .unwrap();
 
         ctx.configure_mesh().draw().unwrap();
@@ -103,15 +110,36 @@ impl GnssSatellite {
     }
 
     fn plot_iq_scatter(&self) {
-        let file_name = format!("images/sat-{}-iq-scatter.png", self.prn);
-        let root_area = BitMapBackend::new(&file_name, (600, 400)).into_drawing_area();
+        let file_name = format!("plots/sat-{}-iq-scatter.png", self.prn);
+        let root_area = BitMapBackend::new(&file_name, (400, 400)).into_drawing_area();
         root_area.fill(&WHITE).unwrap();
 
+        let mut x_max = self
+            .correlation_peaks_rolling_buffer
+            .iter()
+            .fold(0.0, |acc, c| if c.re > acc { c.re } else { acc });
+        x_max += 5.0;
+        let mut x_min = self
+            .correlation_peaks_rolling_buffer
+            .iter()
+            .fold(0.0, |acc, c| if c.re < acc { c.re } else { acc });
+        x_min -= 5.0;
+
+        let mut y_max = self
+            .correlation_peaks_rolling_buffer
+            .iter()
+            .fold(0.0, |acc, c| if c.im > acc { c.im } else { acc });
+        y_max += 5.0;
+        let mut y_min = self
+            .correlation_peaks_rolling_buffer
+            .iter()
+            .fold(0.0, |acc, c| if c.im < acc { c.im } else { acc });
+        y_min -= 5.0;
         let mut ctx = ChartBuilder::on(&root_area)
             .set_label_area_size(LabelAreaPosition::Left, 40)
             .set_label_area_size(LabelAreaPosition::Bottom, 40)
             .caption(format!("sat {}", self.prn), ("sans-serif", 40))
-            .build_cartesian_2d(-10.0..10.0, -10.0..10.0)
+            .build_cartesian_2d(x_min..x_max, y_min..y_max)
             .unwrap();
 
         ctx.configure_mesh().draw().unwrap();
@@ -128,7 +156,7 @@ impl GnssSatellite {
         );
     }
 
-    pub fn verify_correlation_peak(&self, doppler_shifted_samples: Vec<Complex64>) {
+    pub fn verify_correlation_peak(&self, doppler_shifted_samples: &Vec<Complex64>) {
         let mut res = vec![];
         let mut p = self.prn_code.clone();
         for _i in 0..get_num_samples_per_msec() {
@@ -155,7 +183,7 @@ impl GnssSatellite {
         }
     }
 
-    fn track_code_phase_offset(&mut self, doppler_shifted_samples: Vec<Complex64>, ts_sec: f64) {
+    fn track_code_phase_offset(&mut self, doppler_shifted_samples: &Vec<Complex64>, ts_sec: f64) {
         let vec_len = doppler_shifted_samples.len();
         let mut prn_code_early = self.prn_code.clone();
         let mut prn_code_late = self.prn_code.clone();
@@ -183,15 +211,29 @@ impl GnssSatellite {
 
         // verify tracking error every second
         if (ts_sec - ts_sec.round() as f64).abs() < 0.001 {
-            self.verify_correlation_peak(doppler_shifted_samples);
+            self.verify_correlation_peak(&doppler_shifted_samples);
         }
     }
 
-    fn track_symbol(&mut self, sample: &IQSample) -> (i8, f64, f64, Complex64) {
+    fn track_symbol(
+        &mut self,
+        doppler_shifted_sample: &Vec<Complex64>,
+        ts_sec: f64,
+    ) -> (i8, f64, f64, Complex64) {
+        let vec_len = doppler_shifted_sample.len();
         let mut prn_code_prompt = self.prn_code.clone();
-        prn_code_prompt.rotate_right(self.param.phase_offset);
+        assert!(self.param.phase_offset < prn_code_prompt.len());
+        self.prn_code.clone().rotate_right(self.param.phase_offset);
 
-        let corr = calc_correlation(&mut self.fft_planner, &sample.iq_vec, &self.prn_code_fft);
+        let fft_fw = self.fft_planner.plan_fft_forward(prn_code_prompt.len());
+        fft_fw.process(&mut prn_code_prompt);
+        let prn_code_prompt_fft = prn_code_prompt;
+
+        let corr = calc_correlation(
+            &mut self.fft_planner,
+            doppler_shifted_sample,
+            &prn_code_prompt_fft,
+        );
         let non_coherent_corr: Vec<_> = corr.iter().map(|x| x.norm()).collect();
         let correlation_strength = get_normalized_correlation_strength(&non_coherent_corr);
         let (idx, _max) = get_max_with_idx(&non_coherent_corr);
@@ -203,15 +245,33 @@ impl GnssSatellite {
         (
             navigation_bit_pseudosymbol_value,
             correlation_strength,
-            sample.ts_sec + delay_phase_sec,
+            ts_sec + delay_phase_sec,
             coherent_correlation_peak,
         )
     }
 
-    fn track_carrier(&mut self, _coherent_corr_peak: Complex64) {}
+    fn calc_loop_filter_params(&self, loop_bw: f64) -> (f64, f64) {
+        let ts_per_sample = 1.0 / 2046000.0;
+        let damping_factor = 1.0 / 2.0f64.sqrt();
+        let loop_gain_phase = 4.0 * damping_factor * loop_bw * ts_per_sample;
+        let loop_gain_freq = 4.0 * loop_bw * loop_bw * ts_per_sample;
+        (loop_gain_phase, loop_gain_freq)
+    }
+
+    //   return loop_gain_phase, loop_gain_freq
+    fn is_carrier_tracker_locked(&self) -> bool {
+        true
+    }
+
+    fn track_carrier(&mut self, coherent_corr_peak: Complex64) {
+        let _error = coherent_corr_peak.re * coherent_corr_peak.im;
+
+        if self.is_carrier_tracker_locked() {
+        } else {
+        }
+    }
 
     pub fn process_samples(&mut self, sample: &IQSample) {
-        let vec_len = sample.iq_vec.len();
         log::info!(
             "sat-{}: processing: ts_sec={:.4} sec num_samples={}: doppler={} phase={}",
             self.prn,
@@ -221,28 +281,24 @@ impl GnssSatellite {
             self.param.phase_offset,
         );
 
-        let mut signal = doppler_shifted_carrier(
+        let mut signal = sample.iq_vec.clone();
+        doppler_shift(
             self.param.doppler_hz,
             sample.ts_sec,
+            &mut signal,
             -self.param.carrier_phase_shift,
             sample.sample_rate,
-            vec_len,
         );
-
-        for i in 0..vec_len {
-            signal[i] = signal[i].mul(sample.iq_vec[i]);
-        }
 
         let doppler_shifted_samples = signal;
 
-        self.track_code_phase_offset(doppler_shifted_samples, sample.ts_sec);
+        self.track_code_phase_offset(&doppler_shifted_samples, sample.ts_sec);
 
-        let (nav_bit, _corr_strength, _ts_sec, coherent_corr_peak) = self.track_symbol(sample);
+        let (_nav_bit, _corr_strength, _ts_sec, coherent_corr_peak) =
+            self.track_symbol(&doppler_shifted_samples, sample.ts_sec);
         self.correlation_peaks_rolling_buffer
             .push(coherent_corr_peak);
         self.track_carrier(coherent_corr_peak);
-
-        log::warn!("sat-{}: bit: {}", self.prn, nav_bit);
 
         log::info!(
             "sat {} -- doppler_hz={} phase_offset={} polar: carrier_phase_shift={}",

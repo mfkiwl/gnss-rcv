@@ -41,6 +41,7 @@ pub fn integrate_correlation(
             doppler_hz,
             shift_sample_sec,
             &mut iq_vec_sample,
+            0.0,
             sample.sample_rate,
         );
 
@@ -72,14 +73,14 @@ fn find_best_doppler_shift_correlation(
     let hi_hz = estimate_hz + spread_hz as i32 + 1;
 
     for doppler_hz in (lo_hz..hi_hz).step_by((spread_hz / DOPPLER_SPREAD_BINS) as usize) {
-        let (corr_f, corr_coherent) =
+        let (corr_non_coherent, corr_coherent) =
             integrate_correlation(fft_planner, &prn_code_fft, sample, num_msec, doppler_hz);
 
-        let b_corr_norm = corr_f.iter().map(|&x| x * x).sum::<f64>();
+        let b_corr_norm = corr_non_coherent.iter().map(|&x| x * x).sum::<f64>();
 
         if b_corr_norm > best_param.corr_norm {
-            let b_corr_second = get_2nd_max(&corr_f);
-            let (phase_offset, b_corr_peak) = get_max_with_idx(&corr_f);
+            let b_corr_second = get_2nd_max(&corr_non_coherent);
+            let (phase_offset, b_corr_peak) = get_max_with_idx(&corr_non_coherent);
             // XXX: this results in faster acquisition and processing. Why?
             //let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
             let b_peak_to_second = 10.0 * ((b_corr_peak - b_corr_second) / b_corr_second).log10();
