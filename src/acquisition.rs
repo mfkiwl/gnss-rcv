@@ -2,6 +2,7 @@ use colored::Colorize;
 use rustfft::{num_complex::Complex64, FftPlanner};
 use std::ops::Add;
 
+use crate::constants::ACQUISITION_WINDOW_MSEC;
 use crate::gold_code::GoldCode;
 use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
@@ -12,8 +13,6 @@ use crate::util::get_max_with_idx;
 use crate::util::get_num_samples_per_msec;
 
 const PI: f64 = std::f64::consts::PI;
-
-const ACQUISITION_WINDOW_MSEC: usize = 10; // acquire on 10msec of data
 
 const DOPPLER_SPREAD_HZ: u32 = 8 * 1000;
 const DOPPLER_SPREAD_BINS: u32 = 10;

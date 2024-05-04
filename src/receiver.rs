@@ -2,9 +2,11 @@ use colored::Colorize;
 use rayon::prelude::*;
 use rustfft::{num_complex::Complex64, FftPlanner};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::acquisition::try_acquisition_one_sat;
+use crate::constants::ACQUISITION_WINDOW_MSEC;
 use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
 use crate::satellite::GnssSatellite;
@@ -12,7 +14,6 @@ use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
 use crate::util::get_num_samples_per_msec;
 
-const ACQUISITION_WINDOW_MSEC: usize = 10; // acquire on 10msec of data
 const ACQUISITION_PERIOD_SEC: f64 = 3.0; // run acquisition every 3sec
 
 pub struct GnssReceiver {
@@ -25,6 +26,19 @@ pub struct GnssReceiver {
     cached_ts_sec_tail: f64,
     last_acq_ts_sec: f64,
     satellites: HashMap<usize, GnssSatellite>,
+    satellites_found: HashSet<usize>,
+}
+
+impl Drop for GnssReceiver {
+    fn drop(&mut self) {
+        if self.satellites_found.is_empty() {
+            return;
+        }
+        log::warn!("found {} satellites", self.satellites_found.len());
+        for prn in &self.satellites_found {
+            log::warn!("sat-{}", *prn)
+        }
+    }
 }
 
 impl GnssReceiver {
@@ -44,6 +58,7 @@ impl GnssReceiver {
             cached_num_msec: 0,
             cached_ts_sec_tail: 0.0,
             satellites: HashMap::<usize, GnssSatellite>::new(),
+            satellites_found: HashSet::<usize>::new(),
         }
     }
 
@@ -105,6 +120,7 @@ impl GnssReceiver {
                         *id,
                         GnssSatellite::new(*id, prn_code, prn_code_fft, *param, samples_ts_sec),
                     );
+                    self.satellites_found.insert(*id);
                 }
             }
         }

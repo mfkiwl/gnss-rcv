@@ -26,7 +26,6 @@ pub struct GnssSatellite {
 
 impl Drop for GnssSatellite {
     fn drop(&mut self) {
-        println!("sat-{}", self.prn);
         self.plot_iq_scatter();
         self.plot_doppler_shift();
     }
@@ -79,19 +78,29 @@ impl GnssSatellite {
         let root_area = BitMapBackend::new(&file_name, (400, 400)).into_drawing_area();
         root_area.fill(&WHITE).unwrap();
 
+        let y_delta = 50.0;
         let x_max = self.phase_offset_rolling_buffer.len() as f64 * 0.001;
 
         let mut y_max =
             self.phase_offset_rolling_buffer
                 .iter()
                 .fold(0.0, |acc, v| if *v > acc { *v } else { acc });
-        y_max += 200.0;
+        y_max += y_delta;
+        let mut y_min = self
+            .phase_offset_rolling_buffer
+            .iter()
+            .fold(2046.0, |acc, v| if *v < acc { *v } else { acc });
+        if y_min > y_delta {
+            y_min -= y_delta;
+        } else {
+            y_min = 0.0;
+        }
 
         let mut ctx = ChartBuilder::on(&root_area)
             .set_label_area_size(LabelAreaPosition::Left, 40)
             .set_label_area_size(LabelAreaPosition::Bottom, 40)
             .caption(format!("sat {}", self.prn), ("sans-serif", 40))
-            .build_cartesian_2d(0.0..x_max, 0.0..y_max)
+            .build_cartesian_2d(0.0..x_max, y_min..y_max)
             .unwrap();
 
         ctx.configure_mesh().draw().unwrap();
@@ -103,7 +112,7 @@ impl GnssSatellite {
                 .map(|(idx, v)| Circle::new((idx as f64 * 0.001, *v), 1, &RED)),
         )
         .unwrap();
-        println!(
+        log::info!(
             "doppler_shift: printed {} items",
             self.phase_offset_rolling_buffer.len()
         );
@@ -150,7 +159,7 @@ impl GnssSatellite {
                 .map(|point| Circle::new((point.re, point.im), 1, &RED)),
         )
         .unwrap();
-        println!(
+        log::info!(
             "printed {} dots",
             self.correlation_peaks_rolling_buffer.len()
         );
@@ -220,7 +229,7 @@ impl GnssSatellite {
         doppler_shifted_sample: &Vec<Complex64>,
         ts_sec: f64,
     ) -> (i8, f64, f64, Complex64) {
-        let vec_len = doppler_shifted_sample.len();
+        //let vec_len = doppler_shifted_sample.len();
         let mut prn_code_prompt = self.prn_code.clone();
         assert!(self.param.phase_offset < prn_code_prompt.len());
         self.prn_code.clone().rotate_right(self.param.phase_offset);
