@@ -1,6 +1,5 @@
 use colored::Colorize;
 use rustfft::{num_complex::Complex64, FftPlanner};
-use std::ops::Add;
 
 use crate::constants::ACQUISITION_WINDOW_MSEC;
 use crate::gold_code::GoldCode;
@@ -27,7 +26,7 @@ pub fn integrate_correlation(
 ) -> (Vec<f64>, Vec<Complex64>) {
     let num_samples_per_msec = get_num_samples_per_msec();
     let mut b_corr_float = vec![0f64; get_num_samples_per_msec()];
-    let mut b_corr_complex: Vec<Complex64> = vec![Complex64::default(); get_num_samples_per_msec()];
+    let mut b_corr_complex = vec![Complex64::default(); get_num_samples_per_msec()];
 
     for idx in 0..num_msec {
         let range_lo = (idx + 0) * num_samples_per_msec;
@@ -47,7 +46,7 @@ pub fn integrate_correlation(
         let corr = calc_correlation(fft_planner, &iq_vec_sample, &prn_code_fft);
         for i in 0..corr.len() {
             b_corr_float[i] += corr[i].norm();
-            b_corr_complex[i] = b_corr_complex[i].add(corr[i]);
+            b_corr_complex[i] += corr[i];
         }
     }
     (b_corr_float, b_corr_complex)
@@ -79,14 +78,14 @@ fn find_best_doppler_shift_correlation(
 
         if b_corr_norm > best_param.corr_norm {
             let b_corr_second = get_2nd_max(&corr_non_coherent);
-            let (phase_offset, b_corr_peak) = get_max_with_idx(&corr_non_coherent);
+            let (code_phase_offset, b_corr_peak) = get_max_with_idx(&corr_non_coherent);
             // XXX: this results in faster acquisition and processing. Why?
             //let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
             let b_peak_to_second = 10.0 * ((b_corr_peak - b_corr_second) / b_corr_second).log10();
-            let polar = corr_coherent[phase_offset].to_polar();
+            let polar = corr_coherent[code_phase_offset].to_polar();
             best_param.snr = b_peak_to_second;
             best_param.doppler_hz = doppler_hz as i32;
-            best_param.phase_offset = phase_offset;
+            best_param.code_phase_offset = code_phase_offset;
             best_param.corr_norm = b_corr_norm;
             best_param.carrier_phase_shift = polar.1; // in radians
             assert!(-PI <= polar.1 && polar.1 <= PI);
@@ -130,7 +129,7 @@ pub fn try_acquisition_one_sat(
             best_param.doppler_hz,
             spread_hz,
             best_param.snr,
-            best_param.phase_offset
+            best_param.code_phase_offset
         );
     }
     if best_param.snr >= SNR_THRESHOLD {
@@ -138,7 +137,7 @@ pub fn try_acquisition_one_sat(
             " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} snr: {}",
             format!("{:2}", sat_id).yellow(),
             best_param.doppler_hz,
-            best_param.phase_offset / 2,
+            best_param.code_phase_offset / 2,
             format!("{:.2}", best_param.snr).green(),
         );
         Some(best_param)
