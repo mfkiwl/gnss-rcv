@@ -7,7 +7,6 @@ pub struct GnssCorrelationParam {
     pub carrier_phase_shift: f64,
     pub snr: f64,
     pub corr_norm: f64,
-    pub best_sample_idx: usize,
 }
 
 #[derive(Default, Clone)]

@@ -75,12 +75,12 @@ pub fn calc_correlation(
     assert_eq!(v_antenna.len(), prn_code_fft.len());
     let fft_fw = fft_planner.plan_fft_forward(num_samples);
 
-    let mut v_antenna_buf = v_antenna.clone();
+    let mut iq_samples_fft = v_antenna.clone();
 
-    fft_fw.process(&mut v_antenna_buf);
+    fft_fw.process(&mut iq_samples_fft);
 
-    let mut v_res: Vec<_> = (0..v_antenna_buf.len())
-        .map(|i| v_antenna_buf[i].mul(prn_code_fft[i].conj()))
+    let mut v_res: Vec<_> = (0..num_samples)
+        .map(|i| iq_samples_fft[i] * prn_code_fft[i].conj())
         .collect();
 
     let fft_bw = fft_planner.plan_fft_inverse(num_samples);
@@ -89,7 +89,7 @@ pub fn calc_correlation(
     v_res
 }
 
-pub fn doppler_shifted_carrier(
+fn doppler_shifted_carrier(
     doppler_hz: i32,
     off_sec: f64,
     carrier_phase_shift: f64,
