@@ -1,3 +1,4 @@
+use glob::glob;
 use plotters::prelude::*;
 use rustfft::num_complex::Complex64;
 
@@ -5,6 +6,20 @@ const PLOT_FONT_SIZE: u32 = 20;
 const PLOT_SIZE_X: u32 = 200;
 const PLOT_SIZE_Y: u32 = 200;
 const PLOT_FOLDER: &str = "plots";
+
+pub fn plot_remove_old_graph() {
+    let pattern = format!("{}/*.png", PLOT_FOLDER);
+
+    for path in glob(&pattern).unwrap() {
+        match path {
+            Ok(path) => {
+                log::info!("Removing chart: {:?}", path.display());
+                std::fs::remove_file(path).unwrap();
+            }
+            Err(e) => println!("{:?}", e),
+        }
+    }
+}
 
 pub fn plot_time_graph(
     prn: usize,
@@ -49,7 +64,7 @@ pub fn plot_time_graph(
     .unwrap();
 }
 
-pub fn plot_iq_scatter(prn: usize, series: &Vec<Complex64>) {
+pub fn plot_iq_scatter(prn: usize, series: &[Complex64]) {
     let file_name = format!("{}/sat-{}-iq-scatter.png", PLOT_FOLDER, prn);
     let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();

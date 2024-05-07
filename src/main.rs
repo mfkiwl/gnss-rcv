@@ -1,5 +1,6 @@
 use colored::Colorize;
 use coredump::register_panic_handler;
+use gnss_test::plots::plot_remove_old_graph;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -75,6 +76,7 @@ fn main() -> std::io::Result<()> {
         }
     }
 
+    plot_remove_old_graph();
     let gold_code = GoldCode::new();
     let recording = IQRecording::new(opt.file, opt.sample_rate, opt.iq_file_type);
     let mut receiver = GnssReceiver::new(gold_code, recording, opt.off_msec, sat_vec);

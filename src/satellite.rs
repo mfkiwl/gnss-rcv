@@ -137,7 +137,10 @@ impl GnssSatellite {
     }
 
     fn plot_iq_scatter(&self) {
-        plot_iq_scatter(self.prn, &self.correlation_peak_rolling_buffer);
+        let n = self.correlation_peak_rolling_buffer.len();
+        if n > 1000 {
+            plot_iq_scatter(self.prn, &self.correlation_peak_rolling_buffer[n - 1000..n]);
+        }
     }
 
     fn plot_correlation_peak_angles(&self) {
