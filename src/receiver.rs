@@ -173,9 +173,9 @@ impl GnssReceiver {
         let samples = self.fetch_samples_msec(1)?;
         self.try_periodic_acquisition();
 
-        for (_id, sat) in &mut self.satellites {
-            sat.process_samples(&samples);
-        }
+        self.satellites
+            .par_iter_mut()
+            .for_each(|(_id, sat)| sat.process_samples(&samples));
 
         Ok(())
     }

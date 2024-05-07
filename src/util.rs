@@ -85,7 +85,7 @@ pub fn calc_correlation(
 
     let fft_bw = fft_planner.plan_fft_inverse(num_samples);
     fft_bw.process(&mut v_res);
-    normalize_post_fft(&mut v_res); // not really required
+    normalize_post_fft(&mut v_res);
     v_res
 }
 
