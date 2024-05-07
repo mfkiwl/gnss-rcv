@@ -1,6 +1,7 @@
 pub mod acquisition;
 pub mod constants;
 pub mod gold_code;
+pub mod plots;
 pub mod receiver;
 pub mod recording;
 pub mod satellite;

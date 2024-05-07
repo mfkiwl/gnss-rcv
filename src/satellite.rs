@@ -1,5 +1,7 @@
 use plotters::prelude::*;
 
+use crate::plots::plot_iq_scatter;
+use crate::plots::plot_time_graph;
 use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
 use crate::util::calc_correlation;
@@ -13,10 +15,6 @@ use rustfft::num_complex::Complex64;
 use rustfft::FftPlanner;
 
 const PI: f64 = std::f64::consts::PI;
-const PLOT_FONT_SIZE: u32 = 20;
-const PLOT_SIZE_X: u32 = 300;
-const PLOT_SIZE_Y: u32 = 300;
-const PLOT_FOLDER: &str = "plots";
 
 pub struct GnssSatellite {
     prn: usize,
@@ -27,17 +25,19 @@ pub struct GnssSatellite {
     _prn_code_fft: Vec<Complex64>,
     fft_planner: FftPlanner<f64>,
 
-    correlation_peaks_rolling_buffer: Vec<Complex64>,
+    correlation_peak_rolling_buffer: Vec<Complex64>,
+    correlation_peak_angle_rolling_buffer: Vec<f64>,
     code_phase_offset_rolling_buffer: Vec<f64>,
-    carrier_wave_phase_errors_rolling_buffer: Vec<f64>,
-    correlation_peak_angles_rolling_buffer: Vec<f64>,
+    carrier_phase_error_rolling_buffer: Vec<f64>,
+    carrier_phase_shift_rolling_buffer: Vec<f64>,
 }
 
 impl Drop for GnssSatellite {
     fn drop(&mut self) {
         self.plot_iq_scatter();
         self.plot_code_phase_offset();
-        self.plot_carrier_wave_phase_errors();
+        self.plot_carrier_phase_error();
+        self.plot_carrier_phase_shift();
         self.plot_correlation_peak_angles();
     }
 }
@@ -70,15 +70,16 @@ impl GnssSatellite {
             code_phase_offset_f64: param.code_phase_offset as f64,
             creation_ts_sec: ts_sec,
             fft_planner: FftPlanner::new(),
-            correlation_peaks_rolling_buffer: vec![],
             code_phase_offset_rolling_buffer: vec![],
-            carrier_wave_phase_errors_rolling_buffer: vec![],
-            correlation_peak_angles_rolling_buffer: vec![],
+            carrier_phase_error_rolling_buffer: vec![],
+            carrier_phase_shift_rolling_buffer: vec![],
+            correlation_peak_rolling_buffer: vec![],
+            correlation_peak_angle_rolling_buffer: vec![],
         }
     }
 
     pub fn update_param(&mut self, param: &GnssCorrelationParam, ts_sec: f64) {
-        self.param = *param;
+        //self.param = *param;
 
         log::warn!(
             "sat {}: exists: age={:.3} sec -- doppler_hz={} phase_shift={} snr={:.2}",
@@ -90,124 +91,55 @@ impl GnssSatellite {
         );
     }
 
-    fn plot_time_graph(&self, name: &str, time_series: &[f64], y_delta: f64) {
-        let file_name = format!("{}/sat-{}-{}.png", PLOT_FOLDER, self.prn, name);
-        let root_area =
-            BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
-        root_area.fill(&WHITE).unwrap();
-
-        let x_max = time_series.len() as f64 * 0.001;
-
-        let mut y_max = time_series
-            .iter()
-            .fold(0.0, |acc, v| if *v > acc { *v } else { acc });
-        y_max += y_delta;
-        let mut y_min = time_series
-            .iter()
-            .fold(2046.0, |acc, v| if *v < acc { *v } else { acc });
-        y_min -= y_delta;
-
-        log::warn!("plot-{}: {} -> {}", name, y_min, y_max);
-
-        let mut ctx = ChartBuilder::on(&root_area)
-            .set_label_area_size(LabelAreaPosition::Left, 40)
-            .set_label_area_size(LabelAreaPosition::Bottom, 40)
-            .caption(
-                format!("sat {}: {}", self.prn, name),
-                ("sans-serif", PLOT_FONT_SIZE),
-            )
-            .build_cartesian_2d(0.0..x_max, y_min..y_max)
-            .unwrap();
-
-        ctx.configure_mesh().draw().unwrap();
-
-        ctx.draw_series(
-            time_series
-                .iter()
-                .enumerate()
-                .map(|(idx, v)| Circle::new((idx as f64 * 0.001, *v), 1, &RED)),
-        )
-        .unwrap();
-    }
-
     fn plot_code_phase_offset(&self) {
         let len = self.code_phase_offset_rolling_buffer.len();
-        let n = 1000;
-        self.plot_time_graph(
+        let n = 2000;
+        plot_time_graph(
+            self.prn,
             "code-phase-offset",
             &self.code_phase_offset_rolling_buffer[len - n..len],
             5.0,
+            &BLUE,
         );
     }
 
-    fn plot_carrier_wave_phase_errors(&self) {
-        let len = self.carrier_wave_phase_errors_rolling_buffer.len();
+    fn plot_carrier_phase_shift(&self) {
+        let len = self.carrier_phase_shift_rolling_buffer.len();
+
+        plot_time_graph(
+            self.prn,
+            "carrier-phase-shift",
+            &self.carrier_phase_shift_rolling_buffer[0..len],
+            0.1,
+            &BLACK,
+        );
+    }
+
+    fn plot_carrier_phase_error(&self) {
+        let len = self.carrier_phase_error_rolling_buffer.len();
         let n = 1000;
-        self.plot_time_graph(
+        plot_time_graph(
+            self.prn,
             "carrier-phase-error",
-            &self.carrier_wave_phase_errors_rolling_buffer[len - n..len],
+            &self.carrier_phase_error_rolling_buffer[len - n..len],
             30.0,
-        );
-    }
-
-    fn plot_correlation_peak_angles(&self) {
-        let len = self.correlation_peak_angles_rolling_buffer.len();
-        let n = 50;
-        self.plot_time_graph(
-            "correlation-peak-angles",
-            &self.correlation_peak_angles_rolling_buffer[len - n..len],
-            1.0,
+            &BLACK,
         );
     }
 
     fn plot_iq_scatter(&self) {
-        let file_name = format!("{}/sat-{}-iq-scatter.png", PLOT_FOLDER, self.prn);
-        let root_area =
-            BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
-        root_area.fill(&WHITE).unwrap();
+        plot_iq_scatter(self.prn, &self.correlation_peak_rolling_buffer);
+    }
 
-        let mut x_max = self
-            .correlation_peaks_rolling_buffer
-            .iter()
-            .fold(0.0, |acc, c| if c.re > acc { c.re } else { acc });
-        x_max += 5.0;
-        let mut x_min = self
-            .correlation_peaks_rolling_buffer
-            .iter()
-            .fold(0.0, |acc, c| if c.re < acc { c.re } else { acc });
-        x_min -= 5.0;
-
-        let mut y_max = self
-            .correlation_peaks_rolling_buffer
-            .iter()
-            .fold(0.0, |acc, c| if c.im > acc { c.im } else { acc });
-        y_max += 5.0;
-        let mut y_min = self
-            .correlation_peaks_rolling_buffer
-            .iter()
-            .fold(0.0, |acc, c| if c.im < acc { c.im } else { acc });
-        y_min -= 5.0;
-        let mut ctx = ChartBuilder::on(&root_area)
-            .set_label_area_size(LabelAreaPosition::Left, 40)
-            .set_label_area_size(LabelAreaPosition::Bottom, 40)
-            .caption(
-                format!("sat {}: iq-scatter", self.prn),
-                ("sans-serif", PLOT_FONT_SIZE),
-            )
-            .build_cartesian_2d(x_min..x_max, y_min..y_max)
-            .unwrap();
-
-        ctx.configure_mesh().draw().unwrap();
-
-        ctx.draw_series(
-            self.correlation_peaks_rolling_buffer
-                .iter()
-                .map(|point| Circle::new((point.re, point.im), 1, &RED)),
-        )
-        .unwrap();
-        log::info!(
-            "printed {} dots",
-            self.correlation_peaks_rolling_buffer.len()
+    fn plot_correlation_peak_angles(&self) {
+        let len = self.correlation_peak_angle_rolling_buffer.len();
+        let n = 50;
+        plot_time_graph(
+            self.prn,
+            "correlation-peak-angles",
+            &self.correlation_peak_angle_rolling_buffer[len - n..len],
+            1.0,
+            &BLACK,
         );
     }
 
@@ -330,12 +262,14 @@ impl GnssSatellite {
         let (alpha, beta) = self.calc_loop_filter_params(loop_bw);
         self.param.carrier_phase_shift += error * alpha;
         self.param.carrier_phase_shift = self.param.carrier_phase_shift % (2.0 * PI);
-
         self.param.doppler_hz += (error * beta) as i32;
-        self.carrier_wave_phase_errors_rolling_buffer.push(error);
+
+        self.carrier_phase_shift_rolling_buffer
+            .push(self.param.carrier_phase_shift);
+        self.carrier_phase_error_rolling_buffer.push(error);
         let (_r, theta) = coherent_corr_peak.to_polar();
 
-        self.correlation_peak_angles_rolling_buffer.push(theta);
+        self.correlation_peak_angle_rolling_buffer.push(theta);
     }
 
     pub fn process_samples(&mut self, sample: &IQSample) {
@@ -364,7 +298,7 @@ impl GnssSatellite {
 
         let (_nav_bit, _corr_strength, _ts_sec, coherent_corr_peak) =
             self.track_symbol(&doppler_shifted_samples, sample.ts_sec);
-        self.correlation_peaks_rolling_buffer
+        self.correlation_peak_rolling_buffer
             .push(coherent_corr_peak);
         self.track_carrier_phase_shift(coherent_corr_peak);
     }
