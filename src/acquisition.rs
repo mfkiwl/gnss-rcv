@@ -13,7 +13,7 @@ use crate::util::get_num_samples_per_msec;
 
 const PI: f64 = std::f64::consts::PI;
 
-const DOPPLER_SPREAD_HZ: u32 = 8 * 1000;
+const DOPPLER_SPREAD_HZ: f64 = 8000.0;
 const DOPPLER_SPREAD_BINS: u32 = 10;
 const SNR_THRESHOLD: f64 = 3.0;
 
@@ -22,7 +22,7 @@ pub fn integrate_correlation(
     prn_code_fft: &Vec<Complex64>,
     sample: &IQSample,
     num_msec: usize,
-    doppler_hz: i32,
+    doppler_hz: f64,
 ) -> (Vec<f64>, Vec<Complex64>) {
     let num_samples_per_msec = get_num_samples_per_msec();
     let mut b_corr_float = vec![0f64; get_num_samples_per_msec()];
@@ -58,8 +58,8 @@ fn find_best_doppler_shift_correlation(
     sample: &IQSample,
     sat_id: usize,
     num_msec: usize,
-    estimate_hz: i32,
-    spread_hz: u32,
+    estimate_hz: f64,
+    spread_hz: f64,
 ) -> GnssCorrelationParam {
     let num_samples_per_msec = get_num_samples_per_msec();
     assert_eq!(sample.iq_vec.len(), num_samples_per_msec * num_msec);
@@ -67,10 +67,10 @@ fn find_best_doppler_shift_correlation(
     let mut best_param = GnssCorrelationParam::default();
     let prn_code_fft = gold_code.get_prn_code_fft(sat_id);
 
-    let lo_hz = estimate_hz - spread_hz as i32;
-    let hi_hz = estimate_hz + spread_hz as i32 + 1;
+    let lo_hz = estimate_hz - spread_hz as f64;
 
-    for doppler_hz in (lo_hz..hi_hz).step_by((spread_hz / DOPPLER_SPREAD_BINS) as usize) {
+    for i in 0..DOPPLER_SPREAD_BINS {
+        let doppler_hz = lo_hz + i as f64 * 2.0 * spread_hz / DOPPLER_SPREAD_BINS as f64;
         let (corr_non_coherent, corr_coherent) =
             integrate_correlation(fft_planner, &prn_code_fft, sample, num_msec, doppler_hz);
 
@@ -84,7 +84,7 @@ fn find_best_doppler_shift_correlation(
             let b_peak_to_second = 10.0 * ((b_corr_peak - b_corr_second) / b_corr_second).log10();
             let polar = corr_coherent[code_phase_offset].to_polar();
             best_param.snr = b_peak_to_second;
-            best_param.doppler_hz = doppler_hz as i32;
+            best_param.doppler_hz = doppler_hz as f64;
             best_param.code_phase_offset = code_phase_offset;
             best_param.corr_norm = b_corr_norm;
             best_param.carrier_phase_shift = polar.1; // in radians
@@ -107,7 +107,7 @@ pub fn try_acquisition_one_sat(
     let mut spread_hz = DOPPLER_SPREAD_HZ;
     let mut best_param = GnssCorrelationParam::default();
 
-    while spread_hz > DOPPLER_SPREAD_BINS {
+    while spread_hz > DOPPLER_SPREAD_BINS as f64 {
         let param = find_best_doppler_shift_correlation(
             gold_code,
             fft_planner,
@@ -120,7 +120,7 @@ pub fn try_acquisition_one_sat(
         if param.snr <= best_param.snr {
             break;
         }
-        spread_hz = spread_hz / DOPPLER_SPREAD_BINS;
+        spread_hz = spread_hz / DOPPLER_SPREAD_BINS as f64;
         best_param = param;
 
         log::debug!(

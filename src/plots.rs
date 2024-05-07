@@ -2,8 +2,8 @@ use plotters::prelude::*;
 use rustfft::num_complex::Complex64;
 
 const PLOT_FONT_SIZE: u32 = 20;
-const PLOT_SIZE_X: u32 = 250;
-const PLOT_SIZE_Y: u32 = 250;
+const PLOT_SIZE_X: u32 = 200;
+const PLOT_SIZE_Y: u32 = 200;
 const PLOT_FOLDER: &str = "plots";
 
 pub fn plot_time_graph(
@@ -21,14 +21,12 @@ pub fn plot_time_graph(
 
     let mut y_max = time_series
         .iter()
-        .fold(0.0, |acc, v| if *v > acc { *v } else { acc });
+        .fold(f64::MIN, |acc, v| if *v > acc { *v } else { acc });
     y_max += y_delta;
     let mut y_min = time_series
         .iter()
-        .fold(2046.0, |acc, v| if *v < acc { *v } else { acc });
+        .fold(f64::MAX, |acc, v| if *v < acc { *v } else { acc });
     y_min -= y_delta;
-
-    log::warn!("plot-{}: {:.2} -> {:.2}", name, y_min, y_max);
 
     let mut ctx = ChartBuilder::on(&root_area)
         .set_label_area_size(LabelAreaPosition::Left, 40)
@@ -55,24 +53,25 @@ pub fn plot_iq_scatter(prn: usize, series: &Vec<Complex64>) {
     let file_name = format!("{}/sat-{}-iq-scatter.png", PLOT_FOLDER, prn);
     let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();
+    let delta = 5.0;
 
     let mut x_max = series
         .iter()
         .fold(0.0, |acc, c| if c.re > acc { c.re } else { acc });
-    x_max += 5.0;
+    x_max += delta;
     let mut x_min = series
         .iter()
         .fold(0.0, |acc, c| if c.re < acc { c.re } else { acc });
-    x_min -= 5.0;
+    x_min -= delta;
 
     let mut y_max = series
         .iter()
         .fold(0.0, |acc, c| if c.im > acc { c.im } else { acc });
-    y_max += 5.0;
+    y_max += delta;
     let mut y_min = series
         .iter()
         .fold(0.0, |acc, c| if c.im < acc { c.im } else { acc });
-    y_min -= 5.0;
+    y_min -= delta;
     let mut ctx = ChartBuilder::on(&root_area)
         .set_label_area_size(LabelAreaPosition::Left, 40)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
@@ -91,5 +90,4 @@ pub fn plot_iq_scatter(prn: usize, series: &Vec<Complex64>) {
             .map(|point| Circle::new((point.re, point.im), 1, &RED)),
     )
     .unwrap();
-    log::info!("printed {} dots", series.len());
 }

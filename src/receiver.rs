@@ -171,6 +171,7 @@ impl GnssReceiver {
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let samples = self.fetch_samples_msec(1)?;
+
         self.try_periodic_acquisition();
 
         self.satellites

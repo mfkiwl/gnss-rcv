@@ -2,7 +2,7 @@ use rustfft::num_complex::Complex64;
 
 #[derive(Default, Clone, Copy)]
 pub struct GnssCorrelationParam {
-    pub doppler_hz: i32,
+    pub doppler_hz: f64,
     pub code_phase_offset: usize,
     pub carrier_phase_shift: f64,
     pub snr: f64,

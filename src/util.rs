@@ -90,13 +90,13 @@ pub fn calc_correlation(
 }
 
 fn doppler_shifted_carrier(
-    doppler_hz: i32,
+    doppler_hz: f64,
     off_sec: f64,
     carrier_phase_shift: f64,
     sample_rate: usize,
     len: usize,
 ) -> Vec<Complex64> {
-    let imaginary = -2.0 * PI * doppler_hz as f64;
+    let imaginary = -2.0 * PI * doppler_hz;
     let sample_rate_f64 = sample_rate as f64;
     let carrier: Vec<Complex64> = (0..len)
         .map(|x| x as f64)
@@ -111,7 +111,7 @@ fn doppler_shifted_carrier(
 }
 
 pub fn doppler_shift(
-    doppler_hz: i32,
+    doppler_hz: f64,
     off_sec: f64,
     iq_vec: &mut Vec<Complex64>,
     carrier_phase_shift: f64,

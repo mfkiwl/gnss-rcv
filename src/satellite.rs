@@ -30,6 +30,7 @@ pub struct GnssSatellite {
     code_phase_offset_rolling_buffer: Vec<f64>,
     carrier_phase_error_rolling_buffer: Vec<f64>,
     carrier_phase_shift_rolling_buffer: Vec<f64>,
+    doppler_hz_rolling_buffer: Vec<f64>,
 }
 
 impl Drop for GnssSatellite {
@@ -39,6 +40,7 @@ impl Drop for GnssSatellite {
         self.plot_carrier_phase_error();
         self.plot_carrier_phase_shift();
         self.plot_correlation_peak_angles();
+        self.plot_doppler_hz();
     }
 }
 
@@ -75,12 +77,11 @@ impl GnssSatellite {
             carrier_phase_shift_rolling_buffer: vec![],
             correlation_peak_rolling_buffer: vec![],
             correlation_peak_angle_rolling_buffer: vec![],
+            doppler_hz_rolling_buffer: vec![],
         }
     }
 
     pub fn update_param(&mut self, param: &GnssCorrelationParam, ts_sec: f64) {
-        //self.param = *param;
-
         log::warn!(
             "sat {}: exists: age={:.3} sec -- doppler_hz={} phase_shift={} snr={:.2}",
             self.prn,
@@ -92,25 +93,31 @@ impl GnssSatellite {
     }
 
     fn plot_code_phase_offset(&self) {
-        let len = self.code_phase_offset_rolling_buffer.len();
-        let n = 2000;
         plot_time_graph(
             self.prn,
             "code-phase-offset",
-            &self.code_phase_offset_rolling_buffer[len - n..len],
-            5.0,
+            self.code_phase_offset_rolling_buffer.as_slice(),
+            50.0,
             &BLUE,
         );
     }
 
     fn plot_carrier_phase_shift(&self) {
-        let len = self.carrier_phase_shift_rolling_buffer.len();
-
         plot_time_graph(
             self.prn,
             "carrier-phase-shift",
-            &self.carrier_phase_shift_rolling_buffer[0..len],
-            0.1,
+            self.carrier_phase_shift_rolling_buffer.as_slice(),
+            0.5,
+            &BLACK,
+        );
+    }
+
+    fn plot_doppler_hz(&self) {
+        plot_time_graph(
+            self.prn,
+            "doppler-hz",
+            &self.doppler_hz_rolling_buffer.as_slice(),
+            10.0,
             &BLACK,
         );
     }
@@ -118,13 +125,15 @@ impl GnssSatellite {
     fn plot_carrier_phase_error(&self) {
         let len = self.carrier_phase_error_rolling_buffer.len();
         let n = 1000;
-        plot_time_graph(
-            self.prn,
-            "carrier-phase-error",
-            &self.carrier_phase_error_rolling_buffer[len - n..len],
-            30.0,
-            &BLACK,
-        );
+        if len > n {
+            plot_time_graph(
+                self.prn,
+                "carrier-phase-error",
+                &self.carrier_phase_error_rolling_buffer[len - n..len],
+                30.0,
+                &BLACK,
+            );
+        }
     }
 
     fn plot_iq_scatter(&self) {
@@ -260,10 +269,12 @@ impl GnssSatellite {
             loop_bw = 6.0;
         }
         let (alpha, beta) = self.calc_loop_filter_params(loop_bw);
+
         self.param.carrier_phase_shift += error * alpha;
         self.param.carrier_phase_shift = self.param.carrier_phase_shift % (2.0 * PI);
-        self.param.doppler_hz += (error * beta) as i32;
+        self.param.doppler_hz += error * beta;
 
+        self.doppler_hz_rolling_buffer.push(self.param.doppler_hz);
         self.carrier_phase_shift_rolling_buffer
             .push(self.param.carrier_phase_shift);
         self.carrier_phase_error_rolling_buffer.push(error);
