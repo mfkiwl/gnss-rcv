@@ -14,7 +14,7 @@ use crate::util::get_num_samples_per_msec;
 const PI: f64 = std::f64::consts::PI;
 
 const DOPPLER_SPREAD_HZ: f64 = 8000.0;
-const DOPPLER_SPREAD_BINS: u32 = 10;
+const DOPPLER_SPREAD_BINS: u32 = 20;
 const SNR_THRESHOLD: f64 = 3.0;
 
 pub fn integrate_correlation(

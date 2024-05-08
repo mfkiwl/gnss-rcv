@@ -33,6 +33,8 @@ Resources:
 - [Software Defined GPS](https://www.ocf.berkeley.edu/~marsy/resources/gnss/A%20Software-Defined%20GPS%20and%20Galileo%20Receiver.pdf)
 - [GPS-SDR-SIM](https://github.com/osqzss/gps-sdr-sim)
 - [Python GPS software: Gypsum](https://github.com/codyd51/gypsum)
+- [SWIFT-NAV](https://github.com/swift-nav/libswiftnav)
+- [Raw GPS Signal](http://www.jks.com/gps/gps.html)
 
 A few online SDR recordings at 1575,42 MHz are available online:
 - https://jeremyclark.ca/wp/telecom/rtl-sdr-for-satellite-gps/

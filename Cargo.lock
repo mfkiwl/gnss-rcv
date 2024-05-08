@@ -514,6 +514,7 @@ name = "gnss-test"
 version = "0.1.0"
 dependencies = [
  "bytesize",
+ "chrono",
  "colored",
  "coredump",
  "ctrlc",

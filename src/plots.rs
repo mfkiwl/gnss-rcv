@@ -2,7 +2,7 @@ use glob::glob;
 use plotters::prelude::*;
 use rustfft::num_complex::Complex64;
 
-const PLOT_FONT_SIZE: u32 = 20;
+const PLOT_FONT_SIZE: u32 = 15;
 const PLOT_SIZE_X: u32 = 200;
 const PLOT_SIZE_Y: u32 = 200;
 const PLOT_FOLDER: &str = "plots";
@@ -64,7 +64,7 @@ pub fn plot_time_graph(
     .unwrap();
 }
 
-pub fn plot_iq_scatter(prn: usize, series: &[Complex64]) {
+pub fn plot_iq_scatter(prn: usize, locked: bool, series: &[Complex64]) {
     let file_name = format!("{}/sat-{}-iq-scatter.png", PLOT_FOLDER, prn);
     let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();
@@ -91,7 +91,7 @@ pub fn plot_iq_scatter(prn: usize, series: &[Complex64]) {
         .set_label_area_size(LabelAreaPosition::Left, 40)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
         .caption(
-            format!("sat {}: iq-scatter", prn),
+            format!("sat {}: iq-scatter lck={}", prn, locked),
             ("sans-serif", PLOT_FONT_SIZE),
         )
         .build_cartesian_2d(x_min..x_max, y_min..y_max)

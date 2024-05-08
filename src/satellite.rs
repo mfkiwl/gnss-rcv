@@ -7,9 +7,12 @@ use crate::types::IQSample;
 use crate::util::calc_correlation;
 use crate::util::correlate_vec;
 use crate::util::doppler_shift;
+
 use crate::util::get_max_with_idx;
 use crate::util::get_normalized_correlation_strength;
 use crate::util::get_num_samples_per_msec;
+use crate::util::vector_mean_complex;
+use crate::util::vector_variance;
 use colored::Colorize;
 use rustfft::num_complex::Complex64;
 use rustfft::FftPlanner;
@@ -22,8 +25,12 @@ pub struct GnssSatellite {
     code_phase_offset_f64: f64,
     creation_ts_sec: f64,
     prn_code: Vec<Complex64>,
-    _prn_code_fft: Vec<Complex64>,
     fft_planner: FftPlanner<f64>,
+    last_plot_ts: f64,
+    last_adj_ts: f64,
+    rot_deg: f64,
+    locked: bool,
+    locked_ts: f64,
 
     correlation_peak_rolling_buffer: Vec<Complex64>,
     correlation_peak_angle_rolling_buffer: Vec<f64>,
@@ -35,12 +42,7 @@ pub struct GnssSatellite {
 
 impl Drop for GnssSatellite {
     fn drop(&mut self) {
-        self.plot_iq_scatter();
-        self.plot_code_phase_offset();
-        self.plot_carrier_phase_error();
-        self.plot_carrier_phase_shift();
-        self.plot_correlation_peak_angles();
-        self.plot_doppler_hz();
+        self.update_all_plots();
     }
 }
 
@@ -48,7 +50,6 @@ impl GnssSatellite {
     pub fn new(
         prn: usize,
         prn_code: Vec<Complex64>,
-        prn_code_fft: Vec<Complex64>,
         param: GnssCorrelationParam,
         ts_sec: f64,
     ) -> Self {
@@ -67,7 +68,6 @@ impl GnssSatellite {
         Self {
             prn,
             prn_code,
-            _prn_code_fft: prn_code_fft,
             param,
             code_phase_offset_f64: param.code_phase_offset as f64,
             creation_ts_sec: ts_sec,
@@ -78,6 +78,30 @@ impl GnssSatellite {
             correlation_peak_rolling_buffer: vec![],
             correlation_peak_angle_rolling_buffer: vec![],
             doppler_hz_rolling_buffer: vec![],
+            last_plot_ts: 0.0,
+            last_adj_ts: 0.0,
+            rot_deg: 0.0,
+            locked: false,
+            locked_ts: 0.0,
+        }
+    }
+
+    fn update_locked_state(&mut self, locked: bool, ts_sec: f64) {
+        if self.locked && !locked {
+            let duration_sec = ts_sec - self.locked_ts;
+            if duration_sec > 1.0 {
+                log::warn!(
+                    "sat-{} locked for {:.1} sec. ts={:.1} sec",
+                    self.prn,
+                    ts_sec - self.locked_ts,
+                    ts_sec,
+                );
+            }
+            self.locked = false;
+            self.locked_ts = 0.0;
+        } else if !self.locked && locked {
+            self.locked = true;
+            self.locked_ts = ts_sec;
         }
     }
 
@@ -90,6 +114,15 @@ impl GnssSatellite {
             param.code_phase_offset,
             param.snr
         );
+    }
+
+    fn update_all_plots(&self) {
+        self.plot_iq_scatter();
+        self.plot_code_phase_offset();
+        self.plot_carrier_phase_error();
+        self.plot_carrier_phase_shift();
+        self.plot_correlation_peak_angles();
+        self.plot_doppler_hz();
     }
 
     fn plot_code_phase_offset(&self) {
@@ -124,28 +157,30 @@ impl GnssSatellite {
 
     fn plot_carrier_phase_error(&self) {
         let len = self.carrier_phase_error_rolling_buffer.len();
-        let n = 1000;
-        if len > n {
-            plot_time_graph(
-                self.prn,
-                "carrier-phase-error",
-                &self.carrier_phase_error_rolling_buffer[len - n..len],
-                30.0,
-                &BLACK,
-            );
-        }
+        let n = usize::min(len, 10000);
+
+        plot_time_graph(
+            self.prn,
+            "carrier-phase-error",
+            &self.carrier_phase_error_rolling_buffer[len - n..len],
+            30.0,
+            &BLACK,
+        );
     }
 
     fn plot_iq_scatter(&self) {
-        let n = self.correlation_peak_rolling_buffer.len();
-        if n > 1000 {
-            plot_iq_scatter(self.prn, &self.correlation_peak_rolling_buffer[n - 1000..n]);
-        }
+        let len = self.correlation_peak_rolling_buffer.len();
+        let n = usize::min(len, 1000);
+        plot_iq_scatter(
+            self.prn,
+            self.locked,
+            &self.correlation_peak_rolling_buffer[len - n..len],
+        );
     }
 
     fn plot_correlation_peak_angles(&self) {
         let len = self.correlation_peak_angle_rolling_buffer.len();
-        let n = 50;
+        let n = usize::min(500, len);
         plot_time_graph(
             self.prn,
             "correlation-peak-angles",
@@ -249,6 +284,70 @@ impl GnssSatellite {
         )
     }
 
+    fn is_carrier_tracker_locked(&mut self) -> bool {
+        let len = self.carrier_phase_error_rolling_buffer.len();
+
+        let n = 250;
+        if len < n {
+            return false;
+        }
+        let phase_error_slice = &self.carrier_phase_error_rolling_buffer[len - n..len];
+
+        let variance = vector_variance(phase_error_slice);
+        if variance > 900.0 {
+            return false;
+        }
+
+        let correlation_peaks = &self.correlation_peak_rolling_buffer[len - n..len];
+        if correlation_peaks.len() < 2 {
+            return false;
+        }
+
+        let mut pos_corr = vec![];
+        let mut neg_corr = vec![];
+        for v in correlation_peaks {
+            if v.re <= 0.0 {
+                neg_corr.push(*v);
+            } else {
+                pos_corr.push(*v);
+            }
+        }
+
+        let avg_pos_corr = vector_mean_complex(pos_corr.as_slice());
+
+        let mut neg_i_corr = vec![];
+        let mut pos_i_corr = vec![];
+        for v in neg_corr {
+            neg_i_corr.push(v.re);
+        }
+        for v in pos_corr {
+            pos_i_corr.push(v.re);
+        }
+        let mut neg_i_corr_var = 0.0;
+        let mut pos_i_corr_var = 0.0;
+        if neg_i_corr.len() >= 2 {
+            neg_i_corr_var = vector_variance(&neg_i_corr);
+        }
+        if pos_i_corr.len() >= 2 {
+            pos_i_corr_var = vector_variance(&pos_i_corr);
+        }
+        let mean_i_peak_variance = 0.5 * (neg_i_corr_var + pos_i_corr_var);
+        if mean_i_peak_variance > 2.0 {
+            return false;
+        }
+
+        let (_r, theta) = avg_pos_corr.to_polar();
+        let degree = theta * 360.0 / (2.0 * PI);
+
+        if degree.abs() < 25.0 {
+            //log::warn!("sat-{} is locked: theta={:.1}", self.prn, degree);
+            return true;
+        }
+        self.rot_deg = degree;
+        //log::warn!("sat-{} is NOT locked: theta={:.1}", self.prn, degree);
+        false
+    }
+
     fn calc_loop_filter_params(&self, loop_bw: f64) -> (f64, f64) {
         let ts_per_sample = 1.0 / 2046000.0; // sample_rate
         let damping_factor = 1.0 / 2.0f64.sqrt();
@@ -257,25 +356,22 @@ impl GnssSatellite {
         (loop_gain_phase, loop_gain_freq)
     }
 
-    //   return loop_gain_phase, loop_gain_freq
-    fn is_carrier_tracker_locked(&self) -> bool {
-        false
-    }
-
-    fn track_carrier_phase_shift(&mut self, coherent_corr_peak: Complex64) {
+    fn track_carrier_phase(&mut self, coherent_corr_peak: Complex64, ts_sec: f64) {
         let error = coherent_corr_peak.re * coherent_corr_peak.im;
         let loop_bw;
 
-        if self.is_carrier_tracker_locked() {
+        let locked = self.is_carrier_tracker_locked();
+        self.update_locked_state(locked, ts_sec);
+        if locked {
             loop_bw = 3.0;
         } else {
-            loop_bw = 6.0;
+            loop_bw = 4.0;
         }
         let (alpha, beta) = self.calc_loop_filter_params(loop_bw);
 
-        self.param.carrier_phase_shift += error * alpha;
+        self.param.carrier_phase_shift += error * alpha * 1.0; // XXX
         self.param.carrier_phase_shift = self.param.carrier_phase_shift % (2.0 * PI);
-        self.param.doppler_hz += error * beta;
+        self.param.doppler_hz += error * beta; // XXX
 
         self.doppler_hz_rolling_buffer.push(self.param.doppler_hz);
         self.carrier_phase_shift_rolling_buffer
@@ -314,6 +410,23 @@ impl GnssSatellite {
             self.track_symbol(&doppler_shifted_samples, sample.ts_sec);
         self.correlation_peak_rolling_buffer
             .push(coherent_corr_peak);
-        self.track_carrier_phase_shift(coherent_corr_peak);
+        self.track_carrier_phase(coherent_corr_peak, sample.ts_sec);
+        if sample.ts_sec - self.last_plot_ts >= 2.0 {
+            self.update_all_plots();
+            self.last_plot_ts = sample.ts_sec;
+        }
+        if sample.ts_sec - self.last_adj_ts >= 5.0 {
+            if !self.rot_deg.is_nan() {
+                //self.param.carrier_phase_shift -= self.rot_deg * 2.0 * PI / 360.0;
+
+                //let len = self.correlation_peak_rolling_buffer.len();
+                //let n = 1000;
+                //let corr = &self.correlation_peak_rolling_buffer[len - n..len];
+
+                log::warn!("sat-{}: adjusted rotation: {:.1}", self.prn, self.rot_deg);
+
+                self.last_adj_ts = sample.ts_sec;
+            }
+        }
     }
 }
