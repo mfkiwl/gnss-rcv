@@ -120,16 +120,7 @@ impl GnssReceiver {
                 }
             }
         }
-        let mut sat_removed = vec![];
-        for id in self.satellites.keys() {
-            if !new_sats.contains_key(&id) {
-                log::warn!("{}", format!("sat {}: disappeared", id).red());
-                sat_removed.push(id.clone());
-            }
-        }
-        for id in sat_removed {
-            self.satellites.remove(&id);
-        }
+
         log::debug!("acquisition: {} msec", ts.elapsed().as_millis());
         self.last_acq_ts_sec = self.cached_ts_sec_tail;
     }
