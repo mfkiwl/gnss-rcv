@@ -22,7 +22,6 @@ pub struct GnssReceiver {
     sat_vec: Vec<usize>,
     off_samples: usize,
     cached_iq_vec: Vec<Complex64>,
-    cached_num_msec: usize,
     cached_ts_sec_tail: f64,
     last_acq_ts_sec: f64,
     satellites: HashMap<usize, GnssSatellite>,
@@ -55,7 +54,6 @@ impl GnssReceiver {
             off_samples: off_msec * get_num_samples_per_msec(),
             last_acq_ts_sec: 0.0,
             cached_iq_vec: Vec::<Complex64>::new(),
-            cached_num_msec: 0,
             cached_ts_sec_tail: 0.0,
             satellites: HashMap::<usize, GnssSatellite>::new(),
             satellites_found: HashSet::<usize>::new(),
@@ -108,14 +106,12 @@ impl GnssReceiver {
 
         for (id, param) in &new_sats {
             match self.satellites.get_mut(id) {
-                Some(sat) => sat.update_param(param, samples_ts_sec),
+                Some(sat) => sat.update_param(param),
                 None => {
                     let prn_code = self.gold_code.get_prn_code_upsampled_complex(*id);
 
-                    self.satellites.insert(
-                        *id,
-                        GnssSatellite::new(*id, prn_code, *param, samples_ts_sec),
-                    );
+                    self.satellites
+                        .insert(*id, GnssSatellite::new(*id, prn_code, *param));
                     self.satellites_found.insert(*id);
                 }
             }
@@ -125,11 +121,12 @@ impl GnssReceiver {
         self.last_acq_ts_sec = self.cached_ts_sec_tail;
     }
 
-    fn fetch_samples_msec(
-        &mut self,
-        num_msec: usize,
-    ) -> Result<IQSample, Box<dyn std::error::Error>> {
-        let num_samples = num_msec * get_num_samples_per_msec();
+    fn fetch_samples_msec(&mut self) -> Result<IQSample, Box<dyn std::error::Error>> {
+        let num_samples = if self.cached_iq_vec.len() == 0 {
+            2 * get_num_samples_per_msec()
+        } else {
+            get_num_samples_per_msec()
+        };
         let mut sample = self
             .iq_recording
             .read_iq_file(self.off_samples, num_samples)?;
@@ -138,26 +135,24 @@ impl GnssReceiver {
 
         self.off_samples += num_samples;
         self.cached_iq_vec.append(&mut sample.iq_vec);
-        self.cached_ts_sec_tail += num_msec as f64 / 1000.0;
-        self.cached_num_msec += num_msec;
+        self.cached_ts_sec_tail +=
+            num_samples as f64 / (1000.0 * get_num_samples_per_msec() as f64);
 
-        if self.cached_num_msec > ACQUISITION_WINDOW_MSEC {
-            let num_msec_to_remove = self.cached_num_msec - ACQUISITION_WINDOW_MSEC;
-            let num_samples = num_msec_to_remove * get_num_samples_per_msec();
+        if self.cached_iq_vec.len() > ACQUISITION_WINDOW_MSEC * get_num_samples_per_msec() {
+            let num_samples = get_num_samples_per_msec();
             let _ = self.cached_iq_vec.drain(0..num_samples);
-            self.cached_num_msec -= num_msec_to_remove;
-            assert_eq!(self.cached_num_msec, ACQUISITION_WINDOW_MSEC);
         }
         let len = self.cached_iq_vec.len();
+
         Ok(IQSample {
-            iq_vec: self.cached_iq_vec[len - num_samples..len].to_vec(),
-            ts_sec: self.cached_ts_sec_tail, // - num_msec as f64 / 1000.0,
+            iq_vec: self.cached_iq_vec[len - 2 * get_num_samples_per_msec()..len].to_vec(),
+            ts_sec: self.cached_ts_sec_tail,
             sample_rate: sample.sample_rate,
         })
     }
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let samples = self.fetch_samples_msec(1)?;
+        let samples = self.fetch_samples_msec()?;
 
         self.try_periodic_acquisition();
 

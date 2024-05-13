@@ -5,7 +5,7 @@ pub struct GnssCorrelationParam {
     pub doppler_hz: f64,
     pub code_phase_offset: usize,
     pub carrier_phase_shift: f64,
-    pub snr: f64,
+    pub cn0: f64,
     pub corr_norm: f64,
 }
 

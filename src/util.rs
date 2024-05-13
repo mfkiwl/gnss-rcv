@@ -86,17 +86,17 @@ fn doppler_shifted_carrier(
     doppler_hz: f64,
     off_sec: f64,
     carrier_phase_shift: f64,
-    sample_rate: usize,
+    sample_rate: f64,
     len: usize,
 ) -> Vec<Complex64> {
     let imaginary = -2.0 * PI * doppler_hz;
-    let sample_rate_f64 = sample_rate as f64;
+
     let carrier: Vec<Complex64> = (0..len)
         .map(|x| x as f64)
         .map(|y| {
             Complex64::from_polar(
                 1.0,
-                imaginary * (y / sample_rate_f64 + off_sec) + carrier_phase_shift,
+                imaginary * (y / sample_rate + off_sec) + carrier_phase_shift,
             )
         })
         .collect();
@@ -104,11 +104,11 @@ fn doppler_shifted_carrier(
 }
 
 pub fn doppler_shift(
+    iq_vec: &mut Vec<Complex64>,
     doppler_hz: f64,
     off_sec: f64,
-    iq_vec: &mut Vec<Complex64>,
     carrier_phase_shift: f64,
-    sample_rate: usize,
+    sample_rate: f64,
 ) {
     let carrier = doppler_shifted_carrier(
         doppler_hz,

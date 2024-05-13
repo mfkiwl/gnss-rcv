@@ -68,11 +68,11 @@ pub fn plot_time_graph(
     .unwrap();
 }
 
-pub fn plot_iq_scatter(prn: usize, locked: bool, series: &[Complex64]) {
+pub fn plot_iq_scatter(prn: usize, series: &[Complex64]) {
     let file_name = format!("{}/sat-{}-iq-scatter.png", PLOT_FOLDER, prn);
     let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();
-    let delta = 5.0;
+    let delta = 2.0;
 
     if series.len() < 10 {
         return;
@@ -99,7 +99,7 @@ pub fn plot_iq_scatter(prn: usize, locked: bool, series: &[Complex64]) {
         .set_label_area_size(LabelAreaPosition::Left, 40)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
         .caption(
-            format!("sat {}: iq-scatter lck={}", prn, locked),
+            format!("sat {}: iq-scatter", prn),
             ("sans-serif", PLOT_FONT_SIZE),
         )
         .build_cartesian_2d(x_min..x_max, y_min..y_max)

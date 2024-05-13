@@ -2,8 +2,9 @@ use colored::Colorize;
 use rustfft::{num_complex::Complex64, FftPlanner};
 
 use crate::constants::ACQUISITION_WINDOW_MSEC;
-use crate::constants::PI;
-use crate::constants::SNR_THRESHOLD_LOCKED;
+
+const PI: f64 = std::f64::consts::PI;
+use crate::constants::CN0_THRESHOLD_LOCKED;
 use crate::gold_code::GoldCode;
 use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
@@ -35,11 +36,11 @@ pub fn integrate_correlation(
 
         let shift_sample_sec = (idx * num_samples_per_msec) as f64 / sample.sample_rate as f64;
         doppler_shift(
+            &mut iq_vec_sample,
             doppler_hz,
             shift_sample_sec,
-            &mut iq_vec_sample,
             0.0,
-            sample.sample_rate,
+            sample.sample_rate as f64,
         );
 
         let corr = calc_correlation(fft_planner, &iq_vec_sample, &prn_code_fft);
@@ -82,10 +83,10 @@ fn find_best_doppler_shift_correlation(
             // XXX: this results in faster acquisition and processing. Why?
             //let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
             //let b_peak_to_second = 10.0 * ((b_corr_peak - b_corr_second) / b_corr_second).log10();
-            let snr = 10.0 * ((b_corr_peak - b_avg) / b_avg / 0.001).log10();
+            let cn0 = 10.0 * ((b_corr_peak - b_avg) / b_avg / 0.001).log10();
             let polar = corr_coherent[code_phase_offset].to_polar();
-            // best_param.snr = b_peak_to_second;
-            best_param.snr = snr;
+
+            best_param.cn0 = cn0;
             best_param.doppler_hz = doppler_hz as f64;
             best_param.code_phase_offset = code_phase_offset;
             best_param.corr_norm = b_corr_norm;
@@ -109,7 +110,7 @@ pub fn try_acquisition_one_sat(
     let mut spread_hz = DOPPLER_SPREAD_HZ;
     let mut best_param = GnssCorrelationParam::default();
 
-    while spread_hz > DOPPLER_SPREAD_BINS as f64 {
+    while spread_hz > 10 as f64 {
         let param = find_best_doppler_shift_correlation(
             gold_code,
             fft_planner,
@@ -119,28 +120,28 @@ pub fn try_acquisition_one_sat(
             best_param.doppler_hz,
             spread_hz,
         );
-        if param.snr <= best_param.snr {
+        if param.cn0 <= best_param.cn0 {
             break;
         }
         spread_hz = spread_hz / DOPPLER_SPREAD_BINS as f64;
         best_param = param;
 
         log::debug!(
-            "BEST: sat_id={} -- estimate_hz={} spread_hz={:3} snr={:.3} phase_idx={}",
+            "BEST: sat_id={} -- estimate_hz={} spread_hz={:3} cn0={:.2} phase_idx={}",
             sat_id,
             best_param.doppler_hz,
             spread_hz,
-            best_param.snr,
+            best_param.cn0,
             best_param.code_phase_offset
         );
     }
-    if best_param.snr >= SNR_THRESHOLD_LOCKED {
+    if best_param.cn0 >= CN0_THRESHOLD_LOCKED {
         log::info!(
-            " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} snr: {}",
+            " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} cn0: {:.2}",
             format!("{:2}", sat_id).yellow(),
             best_param.doppler_hz,
             best_param.code_phase_offset / 2,
-            format!("{:.2}", best_param.snr).green(),
+            format!("{:.2}", best_param.cn0).green(),
         );
         Some(best_param)
     } else {
