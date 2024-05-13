@@ -389,18 +389,9 @@ impl GnssSatellite {
         self.correlation_peak_angle_rolling_buffer.push(theta);
     }
 
-    pub fn process_samples(&mut self, sample: &IQSample) {
-        log::info!(
-            "sat-{}: processing: ts_sec={:.4} sec snr={:.1} num_samples={}: doppler={} code_phase_off={} carrier_phase_shift={:.2}",
-            self.prn,
-            sample.ts_sec,
-            sample.iq_vec.len(),
-            self.snr,
-            self.doppler_hz,
-            self.code_phase_offset,
-            self.carrier_phase_shift,
-        );
+    fn process_searching(&mut self, samples: &IQSample) {}
 
+    fn process_locked(&mut self, sample: &IQSample) {
         let mut signal = sample.iq_vec.clone();
         doppler_shift(
             self.doppler_hz,
@@ -421,6 +412,25 @@ impl GnssSatellite {
         if sample.ts_sec - self.last_plot_ts >= 2.0 {
             self.update_all_plots();
             self.last_plot_ts = sample.ts_sec;
+        }
+    }
+
+    pub fn process_samples(&mut self, sample: &IQSample) {
+        log::info!(
+            "sat-{}: processing: ts_sec={:.4} sec snr={:.1} num_samples={}: doppler={} code_phase_off={} carrier_phase_shift={:.2}",
+            self.prn,
+            sample.ts_sec,
+            sample.iq_vec.len(),
+            self.snr,
+            self.doppler_hz,
+            self.code_phase_offset,
+            self.carrier_phase_shift,
+        );
+
+        if self.state == TrackState::SEARCHING {
+            self.process_searching(sample);
+        } else {
+            self.process_locked(sample);
         }
     }
 }

@@ -32,6 +32,10 @@ pub fn plot_time_graph(
     let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();
 
+    if time_series.len() < 10 {
+        return;
+    }
+
     let x_max = time_series.len() as f64 * 0.001;
 
     let mut y_max = time_series
@@ -69,6 +73,10 @@ pub fn plot_iq_scatter(prn: usize, locked: bool, series: &[Complex64]) {
     let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();
     let delta = 5.0;
+
+    if series.len() < 10 {
+        return;
+    }
 
     let mut x_max = series
         .iter()
