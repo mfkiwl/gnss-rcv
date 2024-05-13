@@ -35,6 +35,7 @@ Resources:
 - [Python GPS software: Gypsum](https://github.com/codyd51/gypsum)
 - [SWIFT-NAV](https://github.com/swift-nav/libswiftnav)
 - [Raw GPS Signal](http://www.jks.com/gps/gps.html)
+- [PocketSDR](https://github.com/tomojitakasu/PocketSDR/)
 
 A few online SDR recordings at 1575,42 MHz are available online:
 - https://jeremyclark.ca/wp/telecom/rtl-sdr-for-satellite-gps/

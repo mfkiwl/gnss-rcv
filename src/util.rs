@@ -40,17 +40,10 @@ pub fn get_num_samples_per_msec() -> usize {
     PRN_CODE_LEN * 2
 }
 
-pub fn get_2nd_max(v: &Vec<f64>) -> f64 {
-    let (i_max, max) = get_max_with_idx(v);
+pub fn get_average(v: &Vec<f64>) -> f64 {
+    let sum: f64 = v.iter().sum();
 
-    let mut second = 0.0;
-    let delta = 50;
-    for i in 0..v.len() {
-        if v[i] > second && v[i] < max && (i > i_max + delta || i < i_max - delta) {
-            second = v[i];
-        }
-    }
-    second
+    sum / v.len() as f64
 }
 
 fn normalize_post_fft(data: &mut Vec<Complex64>) {
@@ -128,7 +121,7 @@ pub fn doppler_shift(
     assert_eq!(iq_vec.len(), carrier.len());
 
     for i in 0..iq_vec.len() {
-        iq_vec[i] = iq_vec[i].mul(carrier[i]);
+        iq_vec[i] = iq_vec[i] * carrier[i];
     }
 }
 

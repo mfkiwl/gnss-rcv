@@ -7,7 +7,7 @@ use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
 use crate::util::calc_correlation;
 use crate::util::doppler_shift;
-use crate::util::get_2nd_max;
+use crate::util::get_average;
 use crate::util::get_max_with_idx;
 use crate::util::get_num_samples_per_msec;
 
@@ -15,7 +15,7 @@ const PI: f64 = std::f64::consts::PI;
 
 const DOPPLER_SPREAD_HZ: f64 = 8000.0;
 const DOPPLER_SPREAD_BINS: u32 = 20;
-const SNR_THRESHOLD: f64 = 3.0;
+const SNR_THRESHOLD: f64 = 35.0;
 
 pub fn integrate_correlation(
     fft_planner: &mut FftPlanner<f64>,
@@ -77,13 +77,16 @@ fn find_best_doppler_shift_correlation(
         let b_corr_norm = corr_non_coherent.iter().map(|&x| x * x).sum::<f64>();
 
         if b_corr_norm > best_param.corr_norm {
-            let b_corr_second = get_2nd_max(&corr_non_coherent);
+            //let b_corr_second = get_2nd_max(&corr_non_coherent);
+            let b_avg = get_average(&corr_non_coherent);
             let (code_phase_offset, b_corr_peak) = get_max_with_idx(&corr_non_coherent);
             // XXX: this results in faster acquisition and processing. Why?
             //let b_peak_to_second = 10.0 * (b_corr_peak / b_corr_second).log10();
-            let b_peak_to_second = 10.0 * ((b_corr_peak - b_corr_second) / b_corr_second).log10();
+            //let b_peak_to_second = 10.0 * ((b_corr_peak - b_corr_second) / b_corr_second).log10();
+            let snr = 10.0 * ((b_corr_peak - b_avg) / b_avg / 0.001).log10();
             let polar = corr_coherent[code_phase_offset].to_polar();
-            best_param.snr = b_peak_to_second;
+            // best_param.snr = b_peak_to_second;
+            best_param.snr = snr;
             best_param.doppler_hz = doppler_hz as f64;
             best_param.code_phase_offset = code_phase_offset;
             best_param.corr_norm = b_corr_norm;
