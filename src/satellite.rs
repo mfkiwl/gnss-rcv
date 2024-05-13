@@ -1,5 +1,6 @@
 use plotters::prelude::*;
 
+use crate::constants::PI;
 use crate::plots::plot_iq_scatter;
 use crate::plots::plot_time_graph;
 use crate::types::GnssCorrelationParam;
@@ -16,22 +17,24 @@ use colored::Colorize;
 use rustfft::num_complex::Complex64;
 use rustfft::FftPlanner;
 
-const PI: f64 = std::f64::consts::PI;
+#[derive(PartialEq)]
+enum TrackState {
+    LOCKED,
+    SEARCHING,
+}
 
 pub struct GnssSatellite {
     prn: usize,
     param: GnssCorrelationParam,
-    _code_cycle_period_sec: f64,
     code_phase_offset_f64: f64,
     creation_ts_sec: f64,
     prn_code: Vec<Complex64>,
     fft_planner: FftPlanner<f64>,
-    last_plot_ts: f64,
+    state: TrackState,
 
-    rot_deg: f64,
-    locked: bool,
     locked_ts: f64,
     total_locked_ts: f64,
+    last_plot_ts: f64,
 
     correlation_peak_rolling_buffer: Vec<Complex64>,
     correlation_peak_angle_rolling_buffer: Vec<f64>,
@@ -80,16 +83,17 @@ impl GnssSatellite {
             correlation_peak_angle_rolling_buffer: vec![],
             doppler_hz_rolling_buffer: vec![],
             last_plot_ts: 0.0,
-            rot_deg: 0.0,
-            locked: false,
+
             locked_ts: 0.0,
             total_locked_ts: 0.0,
-            _code_cycle_period_sec: 0.001,
+
+            state: TrackState::SEARCHING,
         }
     }
 
     fn update_locked_state(&mut self, locked: bool, ts_sec: f64) {
-        if self.locked && !locked {
+        let is_locked = self.state == TrackState::LOCKED;
+        if is_locked && !locked {
             let duration_sec = ts_sec - self.locked_ts;
             self.total_locked_ts += duration_sec;
             if duration_sec > 1.0 {
@@ -101,10 +105,10 @@ impl GnssSatellite {
                     self.total_locked_ts,
                 );
             }
-            self.locked = false;
+            self.state = TrackState::SEARCHING;
             self.locked_ts = 0.0;
-        } else if !self.locked && locked {
-            self.locked = true;
+        } else if !is_locked && locked {
+            self.state = TrackState::LOCKED;
             self.locked_ts = ts_sec;
         }
     }
@@ -118,10 +122,6 @@ impl GnssSatellite {
             param.code_phase_offset,
             param.snr
         );
-        if !self.locked {
-            //   self.param.carrier_phase_shift = param.carrier_phase_shift;
-            //   self.param.doppler_hz = param.doppler_hz;
-        }
     }
 
     fn update_all_plots(&self) {
@@ -181,7 +181,7 @@ impl GnssSatellite {
         let n = usize::min(len, 1000);
         plot_iq_scatter(
             self.prn,
-            self.locked,
+            self.state == TrackState::LOCKED,
             &self.correlation_peak_rolling_buffer[len - n..len],
         );
     }
@@ -336,11 +336,9 @@ impl GnssSatellite {
         let degree = theta * 360.0 / (2.0 * PI);
 
         if degree.abs() < 25.0 {
-            //log::warn!("sat-{} is locked: theta={:.1}", self.prn, degree);
             return true;
         }
-        self.rot_deg = degree;
-        //log::warn!("sat-{} is NOT locked: theta={:.1}", self.prn, degree);
+
         false
     }
 

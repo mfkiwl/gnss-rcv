@@ -2,6 +2,8 @@ use colored::Colorize;
 use rustfft::{num_complex::Complex64, FftPlanner};
 
 use crate::constants::ACQUISITION_WINDOW_MSEC;
+use crate::constants::PI;
+use crate::constants::SNR_THRESHOLD_LOCKED;
 use crate::gold_code::GoldCode;
 use crate::types::GnssCorrelationParam;
 use crate::types::IQSample;
@@ -11,11 +13,8 @@ use crate::util::get_average;
 use crate::util::get_max_with_idx;
 use crate::util::get_num_samples_per_msec;
 
-const PI: f64 = std::f64::consts::PI;
-
 const DOPPLER_SPREAD_HZ: f64 = 8000.0;
 const DOPPLER_SPREAD_BINS: u32 = 20;
-const SNR_THRESHOLD: f64 = 35.0;
 
 pub fn integrate_correlation(
     fft_planner: &mut FftPlanner<f64>,
@@ -135,7 +134,7 @@ pub fn try_acquisition_one_sat(
             best_param.code_phase_offset
         );
     }
-    if best_param.snr >= SNR_THRESHOLD {
+    if best_param.snr >= SNR_THRESHOLD_LOCKED {
         log::info!(
             " sat_id: {} -- doppler_hz: {:5} phase_idx: {:4} snr: {}",
             format!("{:2}", sat_id).yellow(),
