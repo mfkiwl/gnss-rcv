@@ -25,11 +25,15 @@ enum TrackState {
 
 pub struct GnssSatellite {
     prn: usize,
-    param: GnssCorrelationParam,
-    code_phase_offset_f64: f64,
     creation_ts_sec: f64,
     prn_code: Vec<Complex64>,
     fft_planner: FftPlanner<f64>,
+
+    doppler_hz: f64,
+    code_phase_offset: usize,
+    code_phase_offset_f64: f64,
+    carrier_phase_shift: f64,
+    snr: f64,
     state: TrackState,
 
     locked_ts: f64,
@@ -72,9 +76,13 @@ impl GnssSatellite {
         Self {
             prn,
             prn_code,
-            param,
+
+            snr: param.snr,
+            doppler_hz: param.doppler_hz,
+            carrier_phase_shift: param.carrier_phase_shift,
+            code_phase_offset: param.code_phase_offset,
             code_phase_offset_f64: param.code_phase_offset as f64,
-            creation_ts_sec: ts_sec,
+
             fft_planner: FftPlanner::new(),
             code_phase_offset_rolling_buffer: vec![],
             carrier_phase_error_rolling_buffer: vec![],
@@ -82,8 +90,9 @@ impl GnssSatellite {
             correlation_peak_rolling_buffer: vec![],
             correlation_peak_angle_rolling_buffer: vec![],
             doppler_hz_rolling_buffer: vec![],
-            last_plot_ts: 0.0,
 
+            creation_ts_sec: ts_sec,
+            last_plot_ts: 0.0,
             locked_ts: 0.0,
             total_locked_ts: 0.0,
 
@@ -214,13 +223,13 @@ impl GnssSatellite {
                 max_idx = i;
             }
         }
-        if max_idx.abs_diff(self.param.code_phase_offset) > 3 {
+        if max_idx.abs_diff(self.code_phase_offset) > 3 {
             log::warn!(
                 "sat-{}: {}: peak at: {} but phase_offset={}",
                 self.prn,
                 format!("XXX code tracking error").red(),
                 max_idx,
-                self.param.code_phase_offset,
+                self.code_phase_offset,
             );
         }
     }
@@ -230,12 +239,12 @@ impl GnssSatellite {
         let mut prn_code_early = self.prn_code.clone();
         let mut prn_code_late = self.prn_code.clone();
 
-        if self.param.code_phase_offset >= 1 {
-            prn_code_early.rotate_right(self.param.code_phase_offset - 1);
+        if self.code_phase_offset >= 1 {
+            prn_code_early.rotate_right(self.code_phase_offset - 1);
         } else {
             prn_code_early.rotate_left(1);
         }
-        prn_code_late.rotate_right((self.param.code_phase_offset + 1) % vec_len);
+        prn_code_late.rotate_right((self.code_phase_offset + 1) % vec_len);
 
         let corr_early = correlate_vec(&doppler_shifted_samples, &prn_code_early);
         let corr_late = correlate_vec(&doppler_shifted_samples, &prn_code_late);
@@ -247,7 +256,7 @@ impl GnssSatellite {
             self.code_phase_offset_f64 += get_num_samples_per_msec() as f64;
         }
         self.code_phase_offset_f64 = self.code_phase_offset_f64 % get_num_samples_per_msec() as f64;
-        self.param.code_phase_offset =
+        self.code_phase_offset =
             self.code_phase_offset_f64.round() as usize % get_num_samples_per_msec();
         self.code_phase_offset_rolling_buffer
             .push(self.code_phase_offset_f64);
@@ -260,8 +269,8 @@ impl GnssSatellite {
 
     fn track_symbol(&mut self, doppler_shifted_sample: &Vec<Complex64>) -> Complex64 {
         let mut prn_code_prompt = self.prn_code.clone();
-        assert!(self.param.code_phase_offset < prn_code_prompt.len());
-        prn_code_prompt.rotate_right(self.param.code_phase_offset);
+        assert!(self.code_phase_offset < prn_code_prompt.len());
+        prn_code_prompt.rotate_right(self.code_phase_offset);
 
         let fft_fw = self.fft_planner.plan_fft_forward(prn_code_prompt.len());
         fft_fw.process(&mut prn_code_prompt);
@@ -364,16 +373,16 @@ impl GnssSatellite {
 
         let (alpha, beta) = self.calc_loop_filter_params(loop_bw);
 
-        self.param.carrier_phase_shift += error * alpha * 1.0; // XXX
-        if self.param.carrier_phase_shift < 0.0 {
-            self.param.carrier_phase_shift += 2.0 * PI;
+        self.carrier_phase_shift += error * alpha * 1.0; // XXX
+        if self.carrier_phase_shift < 0.0 {
+            self.carrier_phase_shift += 2.0 * PI;
         }
-        self.param.carrier_phase_shift = self.param.carrier_phase_shift % (2.0 * PI);
-        self.param.doppler_hz += error * beta; // XXX
+        self.carrier_phase_shift = self.carrier_phase_shift % (2.0 * PI);
+        self.doppler_hz += error * beta; // XXX
 
-        self.doppler_hz_rolling_buffer.push(self.param.doppler_hz);
+        self.doppler_hz_rolling_buffer.push(self.doppler_hz);
         self.carrier_phase_shift_rolling_buffer
-            .push(self.param.carrier_phase_shift);
+            .push(self.carrier_phase_shift);
         self.carrier_phase_error_rolling_buffer.push(error);
         let (_r, theta) = coherent_corr_peak.to_polar();
 
@@ -382,21 +391,22 @@ impl GnssSatellite {
 
     pub fn process_samples(&mut self, sample: &IQSample) {
         log::info!(
-            "sat-{}: processing: ts_sec={:.4} sec num_samples={}: doppler={} code_phase_off={} carrier_phase_shift={:.2}",
+            "sat-{}: processing: ts_sec={:.4} sec snr={:.1} num_samples={}: doppler={} code_phase_off={} carrier_phase_shift={:.2}",
             self.prn,
             sample.ts_sec,
             sample.iq_vec.len(),
-            self.param.doppler_hz,
-            self.param.code_phase_offset,
-            self.param.carrier_phase_shift,
+            self.snr,
+            self.doppler_hz,
+            self.code_phase_offset,
+            self.carrier_phase_shift,
         );
 
         let mut signal = sample.iq_vec.clone();
         doppler_shift(
-            self.param.doppler_hz,
+            self.doppler_hz,
             sample.ts_sec,
             &mut signal,
-            self.param.carrier_phase_shift,
+            self.carrier_phase_shift,
             sample.sample_rate,
         );
 
