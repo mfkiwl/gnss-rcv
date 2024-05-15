@@ -1,95 +1,124 @@
 use colored::Colorize;
 use plotters::prelude::*;
 use rustfft::num_complex::Complex64;
+use rustfft::FftPlanner;
 
 const PI: f64 = std::f64::consts::PI;
 
+use crate::constants::CN0_THRESHOLD_LOCKED;
+use crate::constants::CN0_THRESHOLD_LOST;
 use crate::constants::L1CA_HZ;
 use crate::constants::PRN_CODE_LEN;
+use crate::gold_code::GoldCode;
 use crate::plots::plot_iq_scatter;
 use crate::plots::plot_time_graph;
 use crate::types::GnssCorrelationParam;
-use crate::types::IQSample;
+use crate::util::calc_correlation;
 use crate::util::doppler_shift;
 
 const SP_CORR: f64 = 0.5;
+const T_IDLE: f64 = 1.0;
+const T_ACQ: f64 = 0.01; // 10msec acquisition time
 const T_FPULLIN: f64 = 1.0;
-const T_DLL: f64 = 0.01; // non-coherent integration time for DLL (s)
-const T_CN0: f64 = 1.0; // averaging time for C/N0 (s)
-const B_FLL_WIDE: f64 = 10.0; // bw in Hz
-const B_FLL_NARROW: f64 = 2.0; // bw in Hz
-const B_PLL: f64 = 10.0; // bandwidth of PLL filter (Hz)
-const B_DLL: f64 = 0.5; // band-width of DLL filter (Hz)
+const T_DLL: f64 = 0.01; // non-coherent integration time for DLL
+const T_CN0: f64 = 1.0; // averaging time for C/N0
+const B_FLL_WIDE: f64 = 10.0; // bandwidth of FLL wide Hz
+const B_FLL_NARROW: f64 = 2.0; // bandwidth of FLL narrow Hz
+const B_PLL: f64 = 10.0; // bandwidth of PLL filter Hz
+const B_DLL: f64 = 0.5; // bandwidth of DLL filter Hz
+
+const DOPPLER_SPREAD_HZ: f64 = 8000.0;
+const DOPPLER_SPREAD_BINS: usize = 160 * 2;
 
 #[derive(PartialEq)]
 enum TrackState {
-    LOCKED,
-    SEARCHING,
+    TRACKING,
+    ACQUISITION,
+    IDLE,
 }
 
 pub struct GnssSatellite {
+    // constants
     prn: usize,
-    samples_per_code: usize,
-
-    fc: f64,       // carrier frequency
-    fs: f64,       // sampling frequency
-    code_sec: f64, // PRN duration in sec
+    fc: f64,                 // carrier frequency
+    fs: f64,                 // sampling frequency
+    samples_per_code: usize, // e.g. 2046 for L1CA
+    code_sec: f64,           // PRN duration in sec
     prn_code: Vec<Complex64>,
+    prn_code_fft: Vec<Complex64>,
+    fft_planner: FftPlanner<f64>,
+    state: TrackState,
+    ts_sec: f64, // current time
+
+    // idle
+    num_idle_samples: usize,
+
+    // searching
+    sum_p: Vec<Vec<f64>>,
+    num_acq_samples: usize,
+
+    // tracking
     doppler_hz: f64,
-    code_offset_sec: f64,
+    code_off_sec: f64,
     phi: f64,
     cn0: f64,
     adr: f64,
-    state: TrackState,
     err_phase: f64,
     sum_corr_e: f64,
     sum_corr_l: f64,
     sum_corr_p: f64,
     sum_corr_n: f64,
+    num_tracking_samples: usize,
 
+    // plots
     last_plot_ts: f64,
-    num_locked_samples: usize,
-
     code_phase_offset_rolling_buffer: Vec<f64>,
     carrier_phase_shift_rolling_buffer: Vec<f64>,
     doppler_hz_rolling_buffer: Vec<f64>,
-    iq_scatter_rolling_buffer: Vec<Complex64>,
+    disc_p_rolling_buffer: Vec<Complex64>,
 }
 
 impl Drop for GnssSatellite {
     fn drop(&mut self) {
-        self.update_all_plots(true, self.last_plot_ts);
+        self.update_all_plots(true);
     }
 }
 
 impl GnssSatellite {
-    pub fn new(prn: usize, prn_code: Vec<Complex64>, param: GnssCorrelationParam) -> Self {
+    pub fn new(prn: usize, gold_code: &mut GoldCode, param: GnssCorrelationParam) -> Self {
         log::warn!(
             "{}",
             format!(
-                "sat {}: new: doppler={} phase_shift={} cn0={:.2} phi={:.2}",
+                "sat {:2}: new: cn0={:.1} dopp={:5} code_off={:4} phi={:.2}",
                 prn,
+                param.cn0,
                 param.doppler_hz,
                 param.code_phase_offset,
-                param.cn0,
                 param.carrier_phase_shift
             )
             .green()
         );
+
         Self {
             prn,
-            prn_code,
+            fft_planner: FftPlanner::new(),
+            prn_code: gold_code.get_prn_code_upsampled_complex(prn),
+            prn_code_fft: gold_code.get_prn_code_fft(prn),
+            ts_sec: 0.0,
 
             fc: L1CA_HZ,
             fs: 2046.0 * 1000.0, // sampling frequency
             code_sec: 0.001,
             samples_per_code: 2046,
-            num_locked_samples: 0,
 
+            sum_p: vec![],
+            num_acq_samples: 0,
+            num_idle_samples: 0,
+            num_tracking_samples: 0,
             cn0: param.cn0,
             doppler_hz: param.doppler_hz,
             phi: param.carrier_phase_shift,
-            code_offset_sec: param.code_phase_offset as f64 / PRN_CODE_LEN as f64 * 0.001 / 2.0, // XXX
+            code_off_sec: param.code_phase_offset as f64 / PRN_CODE_LEN as f64 * 0.001 / 2.0, // XXX
             adr: 0.0,
             err_phase: 0.0,
             sum_corr_e: 0.0,
@@ -100,25 +129,85 @@ impl GnssSatellite {
             code_phase_offset_rolling_buffer: vec![],
             carrier_phase_shift_rolling_buffer: vec![],
             doppler_hz_rolling_buffer: vec![],
-            iq_scatter_rolling_buffer: vec![],
-
+            disc_p_rolling_buffer: vec![],
             last_plot_ts: 0.0,
-            state: TrackState::LOCKED,
+            state: TrackState::TRACKING,
         }
+    }
+
+    fn acquisition_init(&mut self) {
+        self.sum_p = vec![vec![0.0; self.samples_per_code]; DOPPLER_SPREAD_BINS];
+        self.num_acq_samples = 0;
+    }
+    fn acquisition_start(&mut self) {
+        self.acquisition_init();
+        self.state = TrackState::ACQUISITION;
+    }
+
+    fn tracking_init(&mut self) {
+        self.doppler_hz = 0.0;
+        self.cn0 = 0.0;
+        self.adr = 0.0;
+        self.code_off_sec = 0.0;
+        self.phi = 0.0;
+        self.err_phase = 0.0;
+        self.sum_corr_p = 0.0;
+        self.sum_corr_e = 0.0;
+        self.sum_corr_l = 0.0;
+        self.sum_corr_n = 0.0;
+        self.num_tracking_samples = 0;
+    }
+
+    fn tracking_start(
+        &mut self,
+        doppler_hz: f64,
+        cn0: f64,
+        code_off_sec: f64,
+        code_offset_idx: usize,
+    ) {
+        log::warn!(
+            "sat-{}: {} cn0={:.1} dopp={:.0} code_off={} ts_sec={:.3}",
+            self.prn,
+            format!("LOCK").green(),
+            cn0,
+            doppler_hz,
+            code_offset_idx,
+            self.ts_sec,
+        );
+        self.tracking_init();
+        self.state = TrackState::TRACKING;
+
+        self.code_off_sec = code_off_sec;
+        self.doppler_hz = doppler_hz;
+        self.cn0 = cn0;
+    }
+
+    fn integrate_correlation(&mut self, iq_vec_slice: &[Complex64], doppler_hz: f64) -> Vec<f64> {
+        let mut iq_vec = iq_vec_slice.to_vec();
+
+        assert_eq!(iq_vec.len(), self.prn_code_fft.len());
+
+        doppler_shift(&mut iq_vec, doppler_hz, 0.0, 0.0, self.fs);
+
+        let corr = calc_correlation(&mut self.fft_planner, &iq_vec, &self.prn_code_fft);
+        let corr_vec: Vec<_> = corr.iter().map(|v| v.norm_sqr()).collect();
+
+        corr_vec
     }
 
     pub fn update_param(&mut self, param: &GnssCorrelationParam) {
         log::warn!(
-            "sat {}: exists:  doppler_hz={} code_phase_shift={} cn0={:.2}",
+            "sat {:2}:      cn0={:.1} dopp={:5} code_off={:4} phi={:4.2}",
             self.prn,
+            param.cn0,
             param.doppler_hz,
             param.code_phase_offset,
-            param.cn0
+            param.carrier_phase_shift,
         );
     }
 
-    fn update_all_plots(&mut self, force: bool, ts_sec: f64) {
-        if !force && ts_sec - self.last_plot_ts <= 2.0 {
+    fn update_all_plots(&mut self, force: bool) {
+        if !force && self.ts_sec - self.last_plot_ts <= 2.0 {
             return;
         }
 
@@ -127,7 +216,7 @@ impl GnssSatellite {
         self.plot_carrier_phase_shift();
         self.plot_doppler_hz();
 
-        self.last_plot_ts = ts_sec;
+        self.last_plot_ts = self.ts_sec;
     }
 
     fn plot_code_phase_offset(&self) {
@@ -161,40 +250,79 @@ impl GnssSatellite {
     }
 
     fn plot_iq_scatter(&self) {
-        let len = self.iq_scatter_rolling_buffer.len();
+        let len = self.disc_p_rolling_buffer.len();
         let n = usize::min(len, 1000);
-        plot_iq_scatter(self.prn, &self.iq_scatter_rolling_buffer[len - n..len]);
+        plot_iq_scatter(self.prn, &&self.disc_p_rolling_buffer[len - n..len]);
     }
 
-    fn process_searching(&mut self, sample: &IQSample) {
-        log::info!(
-            "sat-{}: searching: ts_sec={:.4} sec: cn0={:.1} doppler={} code_off_sec={:.6} phi={:.2}",
-            self.prn,
-            sample.ts_sec,
-            self.cn0,
-            self.doppler_hz,
-            self.code_offset_sec,
-            self.phi,
-        );
-    }
+    fn acquisition_process(&mut self, iq_vec2: &Vec<Complex64>) {
+        // only take the last minute worth of data
+        let iq_vec = &iq_vec2[self.samples_per_code..];
+        let step_hz = 2.0 * DOPPLER_SPREAD_HZ / DOPPLER_SPREAD_BINS as f64;
 
-    pub fn correlate_vec(&self, a: &Vec<Complex64>, b: &Vec<Complex64>) -> Complex64 {
-        let mut sum = Complex64 { re: 0.0, im: 0.0 };
-        for i in 0..a.len() {
-            sum += a[i] * b[i].conj();
+        for i in 0..DOPPLER_SPREAD_BINS {
+            let doppler_hz = -DOPPLER_SPREAD_HZ + i as f64 * step_hz;
+            let c_non_coherent = self.integrate_correlation(iq_vec, doppler_hz);
+            assert_eq!(c_non_coherent.len(), self.samples_per_code);
+
+            for j in 0..self.samples_per_code {
+                self.sum_p[i][j] += c_non_coherent[j]; // norm_sqr()
+            }
         }
-        sum / a.len() as f64
+
+        self.num_acq_samples += 1;
+        assert!(self.num_acq_samples <= 10);
+
+        if self.num_acq_samples as f64 * self.code_sec >= T_ACQ {
+            let mut idx = 0;
+            let mut idx_peak = 0;
+            let mut p_max = 0.0;
+            let mut p_peak = 0.0;
+            let mut p_total = 0.0;
+
+            for i in 0..DOPPLER_SPREAD_BINS {
+                let mut p_sum = 0.0;
+                let mut v_peak = 0.0;
+                let mut j_peak = 0;
+                for j in 0..self.samples_per_code {
+                    p_sum += self.sum_p[i][j];
+                    if self.sum_p[i][j] > v_peak {
+                        v_peak = self.sum_p[i][j];
+                        j_peak = j;
+                    }
+                }
+                if p_sum > p_max {
+                    idx = i;
+                    p_max = p_sum;
+                    p_peak = v_peak;
+                    idx_peak = j_peak;
+                }
+                p_total += p_sum;
+            }
+
+            let doppler_hz = -DOPPLER_SPREAD_HZ + idx as f64 * step_hz;
+            let code_off_sec = idx_peak as f64 / self.samples_per_code as f64 * self.code_sec;
+            let p_avg = p_total / self.sum_p[idx].len() as f64 / DOPPLER_SPREAD_BINS as f64;
+            let cn0 = 10.0 * ((p_peak - p_avg) / p_avg / self.code_sec).log10();
+
+            if cn0 >= CN0_THRESHOLD_LOCKED {
+                self.tracking_start(doppler_hz, cn0, code_off_sec, idx_peak);
+            } else {
+                self.idle_start();
+            }
+            self.acquisition_init();
+        }
     }
 
     fn compute_correlation(
         &mut self,
-        sample: &IQSample,
+        iq_vec: &Vec<Complex64>,
         i: usize,
         phi: f64,
     ) -> (Complex64, Complex64, Complex64, Complex64) {
-        let mut signal = sample.iq_vec[i..i + self.samples_per_code].to_vec();
+        let mut signal = iq_vec[i..i + self.samples_per_code].to_vec();
 
-        doppler_shift(&mut signal, self.doppler_hz, sample.ts_sec, phi, self.fs);
+        doppler_shift(&mut signal, self.doppler_hz, self.ts_sec, phi, self.fs);
 
         // pos = int(sp_corr * T / len(code) * fs) + 1
         let pos = (SP_CORR * self.code_sec * self.fs / PRN_CODE_LEN as f64) as usize;
@@ -230,13 +358,11 @@ impl GnssSatellite {
         }
         corr_neutral /= (signal.len() - pos_neutral) as f64;
 
-        self.iq_scatter_rolling_buffer.push(corr_prompt * 1000.0);
-
         (corr_prompt, corr_early, corr_late, corr_neutral)
     }
 
     fn run_fll(&mut self, c_e: Complex64, c_l: Complex64) {
-        if self.num_locked_samples < 2 {
+        if self.num_tracking_samples < 2 {
             return;
         }
 
@@ -247,7 +373,7 @@ impl GnssSatellite {
             return;
         }
 
-        let b = if self.num_locked_samples as f64 * self.code_sec < T_FPULLIN / 2.0 {
+        let b = if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN / 2.0 {
             B_FLL_WIDE
         } else {
             B_FLL_NARROW
@@ -269,13 +395,14 @@ impl GnssSatellite {
 
     fn run_dll(&mut self, c_e: Complex64, c_l: Complex64) {
         let n = usize::max(1, (T_DLL / self.code_sec) as usize);
+        assert_eq!(n, 10);
         self.sum_corr_e += c_e.norm();
         self.sum_corr_l += c_l.norm();
-        if self.num_locked_samples % n == 0 {
+        if self.num_tracking_samples % n == 0 {
             let e = self.sum_corr_e;
             let l = self.sum_corr_l;
             let err_code = (e - l) / (e + l) / 2.0 * self.code_sec / PRN_CODE_LEN as f64;
-            self.code_offset_sec -= B_DLL / 0.25 * err_code * self.code_sec * n as f64;
+            self.code_off_sec -= B_DLL / 0.25 * err_code * self.code_sec * n as f64;
             self.sum_corr_e = 0.0;
             self.sum_corr_l = 0.0;
         }
@@ -285,18 +412,17 @@ impl GnssSatellite {
         self.sum_corr_p += c_p.norm_sqr();
         self.sum_corr_n += c_n.norm_sqr();
 
-        if self.num_locked_samples % (T_CN0 / self.code_sec) as usize == 0 {
-            if self.sum_corr_n > 0.0 {
-                let cn0 = 10.0 * (self.sum_corr_p / self.sum_corr_n / self.code_sec).log10();
-                self.cn0 += 0.5 * (cn0 - self.cn0);
-                self.sum_corr_n = 0.0;
-                self.sum_corr_p = 0.0;
-                //log::warn!("sat-{}: cn0={:.2}", self.prn, self.cn0);
-            }
+        if self.num_tracking_samples % (T_CN0 / self.code_sec) as usize == 0
+            && self.sum_corr_n > 0.0
+        {
+            let cn0 = 10.0 * (self.sum_corr_p / self.sum_corr_n / self.code_sec).log10();
+            self.cn0 += 0.5 * (cn0 - self.cn0);
+            self.sum_corr_n = 0.0;
+            self.sum_corr_p = 0.0;
         }
     }
 
-    fn process_locked(&mut self, sample: &IQSample) {
+    fn tracking_process(&mut self, iq_vec2: &Vec<Complex64>) {
         assert_eq!(self.code_sec, 0.001);
         assert_eq!(self.fs, 2046000.0);
         assert_eq!(self.fc, 1575420000.0);
@@ -304,20 +430,24 @@ impl GnssSatellite {
 
         let tau = self.code_sec;
         self.adr += self.doppler_hz * tau; // accumulated Doppler
-        self.code_offset_sec -= self.doppler_hz / self.fc * tau; // carrier-aided code offset
+        self.code_off_sec -= self.doppler_hz / self.fc * tau; // carrier-aided code offset
 
         // code offset in samples
-        let mut code_offset = (self.code_offset_sec * self.fs + 0.5) % self.samples_per_code as f64;
-        let phi = (self.adr + self.doppler_hz * code_offset / self.fs) * 2.0 * PI;
-
+        let mut code_offset = (self.code_off_sec * self.fs + 0.5) % self.samples_per_code as f64;
         let mut i: i32 = code_offset as i32;
         if i < 0 {
             i += self.samples_per_code as i32;
         }
-        assert!(i >= 0);
-        let (c_p, c_e, c_l, c_n) = self.compute_correlation(sample, i as usize, phi);
+        let phi = self.adr + self.doppler_hz * i as f64 / self.fs;
 
-        if self.num_locked_samples as f64 * self.code_sec < T_FPULLIN {
+        let mut i: i32 = code_offset as i32;
+        while i < 0 {
+            i += self.samples_per_code as i32;
+        }
+        assert!(i >= 0);
+        let (c_p, c_e, c_l, c_n) = self.compute_correlation(&iq_vec2, i as usize, phi);
+
+        if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN {
             self.run_fll(c_e, c_l);
         } else {
             self.run_pll(c_p);
@@ -330,25 +460,60 @@ impl GnssSatellite {
         }
         self.carrier_phase_shift_rolling_buffer.push(phi);
         self.code_phase_offset_rolling_buffer.push(code_offset);
+        self.disc_p_rolling_buffer.push(c_p * 1000.0);
         self.doppler_hz_rolling_buffer.push(self.doppler_hz);
-        self.update_all_plots(false, sample.ts_sec);
-        self.num_locked_samples += 1;
+        self.update_all_plots(false);
+        self.num_tracking_samples += 1;
+
+        if self.cn0 < CN0_THRESHOLD_LOST {
+            self.idle_start();
+        } else if self.cn0 >= CN0_THRESHOLD_LOCKED {
+            log::info!("sat-{}: cn0={:.1} ACQ", self.prn, self.cn0);
+        }
     }
 
-    pub fn process_samples(&mut self, sample: &IQSample) {
-        log::info!(
-            "sat-{}: processing: ts_sec={:.4} sec: cn0={:.1} doppler={} code_off_sec={:.6} phi={:.2}",
+    fn idle_start(&mut self) {
+        let s = if self.state == TrackState::ACQUISITION {
+            format!("IDLE").yellow()
+        } else {
+            format!("LOST").red()
+        };
+        log::warn!(
+            "sat-{}: {} cn0={:.1} ts_sec={:.3}",
             self.prn,
-            sample.ts_sec,
+            s,
+            self.cn0,
+            self.ts_sec,
+        );
+        self.state = TrackState::IDLE;
+        self.num_idle_samples = 0;
+    }
+
+    fn idle_process(&mut self) {
+        self.num_idle_samples += 1;
+        if self.num_idle_samples as f64 * self.code_sec > T_IDLE {
+            // XXX
+            self.acquisition_start();
+        }
+    }
+
+    pub fn process_samples(&mut self, iq_vec2: &Vec<Complex64>, ts_sec: f64) {
+        self.ts_sec = ts_sec;
+
+        log::info!(
+            "sat-{}: processing: ts_sec={:.4}: cn0={:.1} dopp={:.0} code_off_sec={:.6} phi={:.2}",
+            self.prn,
+            self.ts_sec,
             self.cn0,
             self.doppler_hz,
-            self.code_offset_sec,
+            self.code_off_sec,
             self.phi,
         );
 
         match self.state {
-            TrackState::SEARCHING => self.process_searching(sample),
-            TrackState::LOCKED => self.process_locked(sample),
+            TrackState::ACQUISITION => self.acquisition_process(&iq_vec2),
+            TrackState::TRACKING => self.tracking_process(&iq_vec2),
+            TrackState::IDLE => self.idle_process(),
         }
     }
 }

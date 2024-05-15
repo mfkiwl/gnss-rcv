@@ -34,11 +34,11 @@ pub fn integrate_correlation(
         let mut iq_vec_sample = Vec::from(&sample.iq_vec[range_lo..range_hi]);
         assert_eq!(iq_vec_sample.len(), prn_code_fft.len());
 
-        let shift_sample_sec = (idx * num_samples_per_msec) as f64 / sample.sample_rate as f64;
+        //let shift_sample_sec = (idx * num_samples_per_msec) as f64 / sample.sample_rate as f64;
         doppler_shift(
             &mut iq_vec_sample,
             doppler_hz,
-            shift_sample_sec,
+            0.0,
             0.0,
             sample.sample_rate as f64,
         );

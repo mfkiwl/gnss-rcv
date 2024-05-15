@@ -70,9 +70,8 @@ impl GnssReceiver {
         let num_samples = ACQUISITION_WINDOW_MSEC * get_num_samples_per_msec();
 
         log::warn!(
-            "--- try_acq: cached_ts_sec_tail={:.3} sec cached_vec_len={}",
+            "--- try_acq: ts: {:.3} sec",
             format!("{}", self.cached_ts_sec_tail).green(),
-            cached_vec_len
         );
 
         let samples_vec = self.cached_iq_vec[cached_vec_len - num_samples..cached_vec_len].to_vec();
@@ -108,10 +107,8 @@ impl GnssReceiver {
             match self.satellites.get_mut(id) {
                 Some(sat) => sat.update_param(param),
                 None => {
-                    let prn_code = self.gold_code.get_prn_code_upsampled_complex(*id);
-
                     self.satellites
-                        .insert(*id, GnssSatellite::new(*id, prn_code, *param));
+                        .insert(*id, GnssSatellite::new(*id, &mut self.gold_code, *param));
                     self.satellites_found.insert(*id);
                 }
             }
@@ -158,7 +155,7 @@ impl GnssReceiver {
 
         self.satellites
             .par_iter_mut()
-            .for_each(|(_id, sat)| sat.process_samples(&samples));
+            .for_each(|(_id, sat)| sat.process_samples(&samples.iq_vec, samples.ts_sec));
 
         Ok(())
     }

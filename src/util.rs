@@ -61,14 +61,14 @@ pub fn correlate_vec(a: &Vec<Complex64>, b: &Vec<Complex64>) -> Complex64 {
 
 pub fn calc_correlation(
     fft_planner: &mut FftPlanner<f64>,
-    v_antenna: &Vec<Complex64>,
+    iq_vec: &Vec<Complex64>,
     prn_code_fft: &Vec<Complex64>,
 ) -> Vec<Complex64> {
-    let num_samples = v_antenna.len();
-    assert_eq!(v_antenna.len(), prn_code_fft.len());
+    let num_samples = iq_vec.len();
+    assert_eq!(iq_vec.len(), prn_code_fft.len());
     let fft_fw = fft_planner.plan_fft_forward(num_samples);
 
-    let mut iq_samples_fft = v_antenna.clone();
+    let mut iq_samples_fft = iq_vec.clone();
 
     fft_fw.process(&mut iq_samples_fft);
 
@@ -85,7 +85,7 @@ pub fn calc_correlation(
 fn doppler_shifted_carrier(
     doppler_hz: f64,
     off_sec: f64,
-    carrier_phase_shift: f64,
+    phi: f64,
     sample_rate: f64,
     len: usize,
 ) -> Vec<Complex64> {
@@ -93,12 +93,7 @@ fn doppler_shifted_carrier(
 
     let carrier: Vec<Complex64> = (0..len)
         .map(|x| x as f64)
-        .map(|y| {
-            Complex64::from_polar(
-                1.0,
-                imaginary * (y / sample_rate + off_sec) + carrier_phase_shift,
-            )
-        })
+        .map(|y| Complex64::from_polar(1.0, imaginary * (y / sample_rate + off_sec) + phi))
         .collect();
     carrier
 }
@@ -107,16 +102,10 @@ pub fn doppler_shift(
     iq_vec: &mut Vec<Complex64>,
     doppler_hz: f64,
     off_sec: f64,
-    carrier_phase_shift: f64,
+    phi: f64,
     sample_rate: f64,
 ) {
-    let carrier = doppler_shifted_carrier(
-        doppler_hz,
-        off_sec,
-        carrier_phase_shift,
-        sample_rate,
-        iq_vec.len(),
-    );
+    let carrier = doppler_shifted_carrier(doppler_hz, off_sec, phi, sample_rate, iq_vec.len());
 
     assert_eq!(iq_vec.len(), carrier.len());
 
