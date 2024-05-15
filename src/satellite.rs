@@ -71,6 +71,7 @@ pub struct GnssSatellite {
     num_tracking_samples: usize,
 
     // plots
+    last_log_ts: f64,
     last_plot_ts: f64,
     code_phase_offset_rolling_buffer: Vec<f64>,
     carrier_phase_shift_rolling_buffer: Vec<f64>,
@@ -131,6 +132,7 @@ impl GnssSatellite {
             doppler_hz_rolling_buffer: vec![],
             disc_p_rolling_buffer: vec![],
             last_plot_ts: 0.0,
+            last_log_ts: 0.0,
             state: TrackState::TRACKING,
         }
     }
@@ -166,7 +168,7 @@ impl GnssSatellite {
         code_offset_idx: usize,
     ) {
         log::warn!(
-            "sat-{}: {} cn0={:.1} dopp={:.0} code_off={} ts_sec={:.3}",
+            "sat-{}: {} cn0={:.1} dopp={:5.0} code_off={} ts_sec={:.3}",
             self.prn,
             format!("LOCK").green(),
             cn0,
@@ -197,7 +199,7 @@ impl GnssSatellite {
 
     pub fn update_param(&mut self, param: &GnssCorrelationParam) {
         log::warn!(
-            "sat {:2}:      cn0={:.1} dopp={:5} code_off={:4} phi={:4.2}",
+            "sat {:2}: ---- cn0={:.1} dopp={:5} code_off={:5} phi={:5.2}",
             self.prn,
             param.cn0,
             param.doppler_hz,
@@ -316,11 +318,18 @@ impl GnssSatellite {
 
     fn compute_correlation(
         &mut self,
-        iq_vec: &Vec<Complex64>,
-        i: usize,
+        iq_vec2: &Vec<Complex64>,
+        i: i32,
         phi: f64,
     ) -> (Complex64, Complex64, Complex64, Complex64) {
-        let mut signal = iq_vec[i..i + self.samples_per_code].to_vec();
+        let n: i32 = self.samples_per_code.try_into().unwrap();
+        assert!(-n < i && i < n);
+        let lo = if i > 0 { i } else { n + i };
+        assert!(lo > 0);
+        let lo_u = lo as usize;
+        let hi_u = (lo + n) as usize;
+
+        let mut signal = iq_vec2[lo_u..hi_u].to_vec();
 
         doppler_shift(&mut signal, self.doppler_hz, self.ts_sec, phi, self.fs);
 
@@ -354,7 +363,7 @@ impl GnssSatellite {
         // NEUTRAL:
         let pos_neutral: usize = 80;
         for j in 0..signal.len() - pos_neutral {
-            corr_neutral += signal[j] * self.prn_code[pos + j];
+            corr_neutral += signal[j] * self.prn_code[pos_neutral + j];
         }
         corr_neutral /= (signal.len() - pos_neutral) as f64;
 
@@ -412,11 +421,11 @@ impl GnssSatellite {
         self.sum_corr_p += c_p.norm_sqr();
         self.sum_corr_n += c_n.norm_sqr();
 
-        if self.num_tracking_samples % (T_CN0 / self.code_sec) as usize == 0
-            && self.sum_corr_n > 0.0
-        {
-            let cn0 = 10.0 * (self.sum_corr_p / self.sum_corr_n / self.code_sec).log10();
-            self.cn0 += 0.5 * (cn0 - self.cn0);
+        if self.num_tracking_samples % (T_CN0 / self.code_sec) as usize == 0 {
+            if self.sum_corr_n > 0.0 {
+                let cn0 = 10.0 * (self.sum_corr_p / self.sum_corr_n / self.code_sec).log10();
+                self.cn0 += 0.5 * (cn0 - self.cn0);
+            }
             self.sum_corr_n = 0.0;
             self.sum_corr_p = 0.0;
         }
@@ -433,19 +442,11 @@ impl GnssSatellite {
         self.code_off_sec -= self.doppler_hz / self.fc * tau; // carrier-aided code offset
 
         // code offset in samples
-        let mut code_offset = (self.code_off_sec * self.fs + 0.5) % self.samples_per_code as f64;
-        let mut i: i32 = code_offset as i32;
-        if i < 0 {
-            i += self.samples_per_code as i32;
-        }
+        let code_off = (self.code_off_sec * self.fs + 0.5) % self.samples_per_code as f64;
+        let i = code_off as i32;
         let phi = self.adr + self.doppler_hz * i as f64 / self.fs;
 
-        let mut i: i32 = code_offset as i32;
-        while i < 0 {
-            i += self.samples_per_code as i32;
-        }
-        assert!(i >= 0);
-        let (c_p, c_e, c_l, c_n) = self.compute_correlation(&iq_vec2, i as usize, phi);
+        let (c_p, c_e, c_l, c_n) = self.compute_correlation(&iq_vec2, i, phi);
 
         if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN {
             self.run_fll(c_e, c_l);
@@ -455,20 +456,30 @@ impl GnssSatellite {
         self.run_dll(c_e, c_l);
         self.update_cn0(c_p, c_n);
 
-        if code_offset < 0.0 {
-            code_offset += self.samples_per_code as f64;
-        }
         self.carrier_phase_shift_rolling_buffer.push(phi);
-        self.code_phase_offset_rolling_buffer.push(code_offset);
+        self.code_phase_offset_rolling_buffer.push(code_off);
         self.disc_p_rolling_buffer.push(c_p * 1000.0);
         self.doppler_hz_rolling_buffer.push(self.doppler_hz);
         self.update_all_plots(false);
         self.num_tracking_samples += 1;
 
+        let phi_ = phi % PI;
+        if self.ts_sec - self.last_log_ts > 3.0 {
+            log::warn!(
+                "sat-{:2}: {} cn0={:.1} dopp={:5.0} code_off={:5.0} phi={:5.2} ts_sec={:.3}",
+                self.prn,
+                format!("TRCK").green(),
+                self.cn0,
+                self.doppler_hz,
+                code_off,
+                phi_,
+                self.ts_sec,
+            );
+            self.last_log_ts = self.ts_sec;
+        }
+
         if self.cn0 < CN0_THRESHOLD_LOST {
             self.idle_start();
-        } else if self.cn0 >= CN0_THRESHOLD_LOCKED {
-            log::info!("sat-{}: cn0={:.1} ACQ", self.prn, self.cn0);
         }
     }
 
@@ -492,7 +503,6 @@ impl GnssSatellite {
     fn idle_process(&mut self) {
         self.num_idle_samples += 1;
         if self.num_idle_samples as f64 * self.code_sec > T_IDLE {
-            // XXX
             self.acquisition_start();
         }
     }
