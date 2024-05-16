@@ -17,10 +17,11 @@ use crate::util::get_num_samples_per_msec;
 const DOPPLER_SPREAD_HZ: f64 = 8000.0;
 const DOPPLER_SPREAD_BINS: u32 = 20;
 
-pub fn integrate_correlation(
+fn integrate_correlation(
     fft_planner: &mut FftPlanner<f64>,
     prn_code_fft: &Vec<Complex64>,
     sample: &IQSample,
+    sample_rate: f64,
     num_msec: usize,
     doppler_hz: f64,
 ) -> (Vec<f64>, Vec<Complex64>) {
@@ -35,13 +36,7 @@ pub fn integrate_correlation(
         assert_eq!(iq_vec_sample.len(), prn_code_fft.len());
 
         //let shift_sample_sec = (idx * num_samples_per_msec) as f64 / sample.sample_rate as f64;
-        doppler_shift(
-            &mut iq_vec_sample,
-            doppler_hz,
-            0.0,
-            0.0,
-            sample.sample_rate as f64,
-        );
+        doppler_shift(&mut iq_vec_sample, doppler_hz, 0.0, 0.0, sample_rate);
 
         let corr = calc_correlation(fft_planner, &iq_vec_sample, &prn_code_fft);
         for i in 0..corr.len() {
@@ -56,6 +51,7 @@ fn find_best_doppler_shift_correlation(
     gold_code: &GoldCode,
     fft_planner: &mut FftPlanner<f64>,
     sample: &IQSample,
+    sample_rate: f64,
     sat_id: usize,
     num_msec: usize,
     estimate_hz: f64,
@@ -71,8 +67,14 @@ fn find_best_doppler_shift_correlation(
 
     for i in 0..DOPPLER_SPREAD_BINS {
         let doppler_hz = lo_hz + i as f64 * 2.0 * spread_hz / DOPPLER_SPREAD_BINS as f64;
-        let (corr_non_coherent, corr_coherent) =
-            integrate_correlation(fft_planner, &prn_code_fft, sample, num_msec, doppler_hz);
+        let (corr_non_coherent, corr_coherent) = integrate_correlation(
+            fft_planner,
+            &prn_code_fft,
+            sample,
+            sample_rate,
+            num_msec,
+            doppler_hz,
+        );
 
         let b_corr_norm = corr_non_coherent.iter().map(|&x| x * x).sum::<f64>();
 
@@ -100,6 +102,7 @@ fn find_best_doppler_shift_correlation(
 pub fn try_acquisition_one_sat(
     gold_code: &GoldCode,
     fft_planner: &mut FftPlanner<f64>,
+    sample_rate: f64,
     sat_id: usize,
     sample: &IQSample,
 ) -> Option<GnssCorrelationParam> {
@@ -115,6 +118,7 @@ pub fn try_acquisition_one_sat(
             gold_code,
             fft_planner,
             sample,
+            sample_rate,
             sat_id,
             ACQUISITION_WINDOW_MSEC,
             best_param.doppler_hz,

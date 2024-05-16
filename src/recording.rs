@@ -45,13 +45,13 @@ impl fmt::Display for IQFileType {
 }
 
 pub struct IQRecording {
-    pub file_path: PathBuf,
-    pub sample_rate: usize,
-    pub file_type: IQFileType,
+    file_path: PathBuf,
+    sample_rate: f64,
+    file_type: IQFileType,
 }
 
 impl IQRecording {
-    pub fn new(file_path: PathBuf, sample_rate: usize, file_type: IQFileType) -> Self {
+    pub fn new(file_path: PathBuf, sample_rate: f64, file_type: IQFileType) -> Self {
         let file_size = file_path.metadata().unwrap().len();
         let sample_size = Self::get_sample_size_bytes(&file_type) as f64;
         let recording_duration_sec = file_size as f64 / sample_rate as f64 / sample_size;
@@ -201,7 +201,6 @@ impl IQRecording {
         Ok(IQSample {
             iq_vec,
             ts_sec: off_samples as f64 / self.sample_rate as f64,
-            sample_rate: self.sample_rate,
         })
     }
 }

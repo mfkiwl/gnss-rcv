@@ -42,6 +42,7 @@ pub struct GnssSatellite {
     prn: usize,
     fc: f64,                 // carrier frequency
     fs: f64,                 // sampling frequency
+    fi: f64,                 // intermediate frequency
     samples_per_code: usize, // e.g. 2046 for L1CA
     code_sec: f64,           // PRN duration in sec
     prn_code: Vec<Complex64>,
@@ -87,7 +88,7 @@ impl Drop for GnssSatellite {
 }
 
 impl GnssSatellite {
-    pub fn new(prn: usize, gold_code: &mut GoldCode, param: GnssCorrelationParam) -> Self {
+    pub fn new(prn: usize, gold_code: &mut GoldCode, fs: f64, param: GnssCorrelationParam) -> Self {
         log::warn!(
             "{}",
             format!(
@@ -109,7 +110,8 @@ impl GnssSatellite {
             ts_sec: 0.0,
 
             fc: L1CA_HZ,
-            fs: 2046.0 * 1000.0, // sampling frequency
+            fs,
+            fi: 3000.0 * 1000.0,
             code_sec: 0.001,
             samples_per_code: 2046,
 
@@ -191,7 +193,7 @@ impl GnssSatellite {
 
         assert_eq!(iq_vec.len(), self.prn_code_fft.len());
 
-        doppler_shift(&mut iq_vec, doppler_hz, 0.0, 0.0, self.fs);
+        doppler_shift(&mut iq_vec, self.fi + doppler_hz, 0.0, 0.0, self.fs);
 
         let corr = calc_correlation(&mut self.fft_planner, &iq_vec, &self.prn_code_fft);
         let corr_vec: Vec<_> = corr.iter().map(|v| v.norm_sqr()).collect();
@@ -453,13 +455,17 @@ impl GnssSatellite {
         assert_eq!(self.samples_per_code, 2046);
 
         let tau = self.code_sec;
+        let fc = self.fi + self.doppler_hz;
         self.adr += self.doppler_hz * tau; // accumulated Doppler
         self.code_off_sec -= self.doppler_hz / self.fc * tau; // carrier-aided code offset
 
         // code offset in samples
         let code_off = (self.code_off_sec * self.fs + 0.5) % self.samples_per_code as f64;
-        let i = code_off as i32;
-        let phi = self.adr + self.doppler_hz * i as f64 / self.fs;
+        let mut i = code_off as i32;
+        if i < 0 {
+            i += self.samples_per_code as i32;
+        }
+        let phi = self.fi * tau + self.adr + fc * i as f64 / self.fs;
 
         let (c_p, c_e, c_l, c_n) = self.compute_correlation(&iq_vec2, i, phi);
 

@@ -13,5 +13,4 @@ pub struct GnssCorrelationParam {
 pub struct IQSample {
     pub iq_vec: Vec<Complex64>,
     pub ts_sec: f64,
-    pub sample_rate: usize,
 }

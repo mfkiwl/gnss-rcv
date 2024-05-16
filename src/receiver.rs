@@ -18,7 +18,8 @@ const ACQUISITION_PERIOD_SEC: f64 = 3.0; // run acquisition every 3sec
 
 pub struct GnssReceiver {
     gold_code: GoldCode,
-    pub iq_recording: IQRecording,
+    pub recording: IQRecording,
+    fs: f64,
     sat_vec: Vec<usize>,
     off_samples: usize,
     cached_iq_vec: Vec<Complex64>,
@@ -43,13 +44,15 @@ impl Drop for GnssReceiver {
 impl GnssReceiver {
     pub fn new(
         gold_code: GoldCode,
-        iq_recording: IQRecording,
+        recording: IQRecording,
+        fs: f64,
         off_msec: usize,
         sat_vec: Vec<usize>,
     ) -> Self {
         Self {
             gold_code,
-            iq_recording,
+            recording,
+            fs,
             sat_vec,
             off_samples: off_msec * get_num_samples_per_msec(),
             last_acq_ts_sec: 0.0,
@@ -81,7 +84,6 @@ impl GnssReceiver {
         let sample = IQSample {
             iq_vec: samples_vec,
             ts_sec: samples_ts_sec,
-            sample_rate: self.iq_recording.sample_rate,
         };
 
         // Perform acquisition on each possible satellite in parallel
@@ -90,7 +92,7 @@ impl GnssReceiver {
             .par_iter()
             .map(|&id| {
                 let mut fft_planner: FftPlanner<f64> = FftPlanner::new();
-                try_acquisition_one_sat(&self.gold_code, &mut fft_planner, id, &sample)
+                try_acquisition_one_sat(&self.gold_code, &mut fft_planner, self.fs, id, &sample)
             })
             .collect();
 
@@ -107,8 +109,10 @@ impl GnssReceiver {
             match self.satellites.get_mut(id) {
                 Some(sat) => sat.update_param(param),
                 None => {
-                    self.satellites
-                        .insert(*id, GnssSatellite::new(*id, &mut self.gold_code, *param));
+                    self.satellites.insert(
+                        *id,
+                        GnssSatellite::new(*id, &mut self.gold_code, self.fs, *param),
+                    );
                     self.satellites_found.insert(*id);
                 }
             }
@@ -124,11 +128,7 @@ impl GnssReceiver {
         } else {
             get_num_samples_per_msec()
         };
-        let mut sample = self
-            .iq_recording
-            .read_iq_file(self.off_samples, num_samples)?;
-
-        assert!(sample.sample_rate > 0);
+        let mut sample = self.recording.read_iq_file(self.off_samples, num_samples)?;
 
         self.off_samples += num_samples;
         self.cached_iq_vec.append(&mut sample.iq_vec);
@@ -144,7 +144,6 @@ impl GnssReceiver {
         Ok(IQSample {
             iq_vec: self.cached_iq_vec[len - 2 * get_num_samples_per_msec()..len].to_vec(),
             ts_sec: self.cached_ts_sec_tail,
-            sample_rate: sample.sample_rate,
         })
     }
 
