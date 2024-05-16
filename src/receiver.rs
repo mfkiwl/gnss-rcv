@@ -20,6 +20,7 @@ pub struct GnssReceiver {
     gold_code: GoldCode,
     pub recording: IQRecording,
     fs: f64,
+    fi: f64,
     sat_vec: Vec<usize>,
     off_samples: usize,
     cached_iq_vec: Vec<Complex64>,
@@ -46,6 +47,7 @@ impl GnssReceiver {
         gold_code: GoldCode,
         recording: IQRecording,
         fs: f64,
+        fi: f64,
         off_msec: usize,
         sat_vec: Vec<usize>,
     ) -> Self {
@@ -53,6 +55,7 @@ impl GnssReceiver {
             gold_code,
             recording,
             fs,
+            fi,
             sat_vec,
             off_samples: off_msec * get_num_samples_per_msec(),
             last_acq_ts_sec: 0.0,
@@ -111,7 +114,7 @@ impl GnssReceiver {
                 None => {
                     self.satellites.insert(
                         *id,
-                        GnssSatellite::new(*id, &mut self.gold_code, self.fs, *param),
+                        GnssSatellite::new(*id, &mut self.gold_code, self.fs, self.fi, *param),
                     );
                     self.satellites_found.insert(*id);
                 }

@@ -61,7 +61,6 @@ pub struct GnssSatellite {
     // tracking
     doppler_hz: f64,
     code_off_sec: f64,
-    phi: f64,
     cn0: f64,
     adr: f64,
     err_phase: f64,
@@ -88,7 +87,13 @@ impl Drop for GnssSatellite {
 }
 
 impl GnssSatellite {
-    pub fn new(prn: usize, gold_code: &mut GoldCode, fs: f64, param: GnssCorrelationParam) -> Self {
+    pub fn new(
+        prn: usize,
+        gold_code: &mut GoldCode,
+        fs: f64,
+        fi: f64,
+        param: GnssCorrelationParam,
+    ) -> Self {
         log::warn!(
             "{}",
             format!(
@@ -111,7 +116,7 @@ impl GnssSatellite {
 
             fc: L1CA_HZ,
             fs,
-            fi: 3000.0 * 1000.0,
+            fi,
             code_sec: 0.001,
             samples_per_code: 2046,
 
@@ -121,7 +126,6 @@ impl GnssSatellite {
             num_tracking_samples: 0,
             cn0: param.cn0,
             doppler_hz: param.doppler_hz,
-            phi: param.carrier_phase_shift,
             code_off_sec: param.code_phase_offset as f64 / PRN_CODE_LEN as f64 * 0.001 / 2.0, // XXX
             adr: 0.0,
             err_phase: 0.0,
@@ -155,7 +159,6 @@ impl GnssSatellite {
         self.cn0 = 0.0;
         self.adr = 0.0;
         self.code_off_sec = 0.0;
-        self.phi = 0.0;
         self.err_phase = 0.0;
         self.sum_corr_p = 0.0;
         self.sum_corr_e = 0.0;
@@ -532,13 +535,12 @@ impl GnssSatellite {
         self.ts_sec = ts_sec;
 
         log::info!(
-            "sat-{}: processing: ts_sec={:.4}: cn0={:.1} dopp={:.0} code_off_sec={:.6} phi={:.2}",
+            "sat-{}: processing: ts_sec={:.4}: cn0={:.1} dopp={:.0} code_off_sec={:.6}",
             self.prn,
             self.ts_sec,
             self.cn0,
             self.doppler_hz,
             self.code_off_sec,
-            self.phi,
         );
 
         match self.state {

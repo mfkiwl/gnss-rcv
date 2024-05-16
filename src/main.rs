@@ -33,7 +33,9 @@ struct Options {
     #[structopt(short = "t", long, default_value = "2xf32")]
     iq_file_type: IQFileType,
     #[structopt(long, default_value = "2046000.0")]
-    sample_rate: f64,
+    fs: f64,
+    #[structopt(long, default_value = "0.0")]
+    fi: f64,
     #[structopt(long, default_value = "0")]
     off_msec: usize,
     #[structopt(long, default_value = "0")]
@@ -90,8 +92,9 @@ fn main() -> std::io::Result<()> {
     init_ctrl_c(exit_req.clone());
 
     log::warn!(
-        "gnss-test: sampling: {} off_msec={} num_msec={}",
-        format!("{:.1} KHz", opt.sample_rate / 1000.0).bold(),
+        "gnss-test: sampling: {} fi: {} off_msec={} num_msec={}",
+        format!("{:.1} KHz", opt.fs / 1000.0).bold(),
+        format!("{:.1} KHz", opt.fi / 1000.0).bold(),
         opt.off_msec,
         opt.num_msec,
     );
@@ -109,9 +112,9 @@ fn main() -> std::io::Result<()> {
 
     plot_remove_old_graph();
     let gold_code = GoldCode::new();
-    let recording = IQRecording::new(opt.file, opt.sample_rate, opt.iq_file_type);
+    let recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
     let mut receiver =
-        GnssReceiver::new(gold_code, recording, opt.sample_rate, opt.off_msec, sat_vec);
+        GnssReceiver::new(gold_code, recording, opt.fs, opt.fi, opt.off_msec, sat_vec);
     let mut n = 0;
     let ts = Instant::now();
 
