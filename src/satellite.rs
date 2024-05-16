@@ -74,7 +74,8 @@ pub struct GnssSatellite {
     last_log_ts: f64,
     last_plot_ts: f64,
     code_phase_offset_rolling_buffer: Vec<f64>,
-    carrier_phase_shift_rolling_buffer: Vec<f64>,
+    phi_error_rolling_buffer: Vec<f64>,
+    phi_rolling_buffer: Vec<f64>,
     doppler_hz_rolling_buffer: Vec<f64>,
     disc_p_rolling_buffer: Vec<Complex64>,
 }
@@ -128,7 +129,8 @@ impl GnssSatellite {
             sum_corr_n: 0.0,
 
             code_phase_offset_rolling_buffer: vec![],
-            carrier_phase_shift_rolling_buffer: vec![],
+            phi_error_rolling_buffer: vec![],
+            phi_rolling_buffer: vec![],
             doppler_hz_rolling_buffer: vec![],
             disc_p_rolling_buffer: vec![],
             last_plot_ts: 0.0,
@@ -215,7 +217,8 @@ impl GnssSatellite {
 
         self.plot_iq_scatter();
         self.plot_code_phase_offset();
-        self.plot_carrier_phase_shift();
+        self.plot_phi();
+        self.plot_phi_error();
         self.plot_doppler_hz();
 
         self.last_plot_ts = self.ts_sec;
@@ -231,11 +234,21 @@ impl GnssSatellite {
         );
     }
 
-    fn plot_carrier_phase_shift(&self) {
+    fn plot_phi(&self) {
         plot_time_graph(
             self.prn,
-            "carrier-phase-shift",
-            self.carrier_phase_shift_rolling_buffer.as_slice(),
+            "phi",
+            self.phi_rolling_buffer.as_slice(),
+            0.5,
+            &BLACK,
+        );
+    }
+
+    fn plot_phi_error(&self) {
+        plot_time_graph(
+            self.prn,
+            "phi-error",
+            self.phi_error_rolling_buffer.as_slice(),
             0.5,
             &BLACK,
         );
@@ -396,10 +409,12 @@ impl GnssSatellite {
             return;
         }
         let err_phase = (c_p.im / c_p.re).atan() / 2.0 / PI;
+        //let err_phase = c_p.im.atan2(c_p.re) / 2.0 / PI;
         let w = B_PLL / 0.53;
         self.doppler_hz +=
             1.4 * w * (err_phase - self.err_phase) + w * w * err_phase * self.code_sec;
         self.err_phase = err_phase;
+        self.phi_error_rolling_buffer.push(err_phase * 2.0 * PI);
     }
 
     fn run_dll(&mut self, c_e: Complex64, c_l: Complex64) {
@@ -456,7 +471,7 @@ impl GnssSatellite {
         self.run_dll(c_e, c_l);
         self.update_cn0(c_p, c_n);
 
-        self.carrier_phase_shift_rolling_buffer.push(phi);
+        self.phi_rolling_buffer.push(phi);
         self.code_phase_offset_rolling_buffer.push(code_off);
         self.disc_p_rolling_buffer.push(c_p * 1000.0);
         self.doppler_hz_rolling_buffer.push(self.doppler_hz);
