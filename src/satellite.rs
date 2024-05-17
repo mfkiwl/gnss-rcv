@@ -24,7 +24,7 @@ const T_DLL: f64 = 0.01; // non-coherent integration time for DLL
 const T_CN0: f64 = 1.0; // averaging time for C/N0
 const B_FLL_WIDE: f64 = 10.0; // bandwidth of FLL wide Hz
 const B_FLL_NARROW: f64 = 2.0; // bandwidth of FLL narrow Hz
-const B_PLL: f64 = 10.0; // bandwidth of PLL filter Hz
+const B_PLL: f64 = 10.0; // bandwidth of PLL filter Hz : 0.005 gives good results initially
 const B_DLL: f64 = 0.5; // bandwidth of DLL filter Hz
 
 const DOPPLER_SPREAD_HZ: f64 = 8000.0;
@@ -63,6 +63,7 @@ pub struct GnssSatellite {
     code_off_sec: f64,
     cn0: f64,
     adr: f64,
+    phi: f64,
     err_phase: f64,
     sum_corr_e: f64,
     sum_corr_l: f64,
@@ -75,7 +76,6 @@ pub struct GnssSatellite {
     last_plot_ts: f64,
     code_phase_offset_rolling_buffer: Vec<f64>,
     phi_error_rolling_buffer: Vec<f64>,
-    phi_rolling_buffer: Vec<f64>,
     doppler_hz_rolling_buffer: Vec<f64>,
     disc_p_rolling_buffer: Vec<Complex64>,
 }
@@ -120,12 +120,13 @@ impl GnssSatellite {
             code_sec: 0.001,
             samples_per_code: 2046,
 
-            sum_p: vec![],
+            sum_p: vec![vec![0.0; 2046]; DOPPLER_SPREAD_BINS],
             num_acq_samples: 0,
             num_idle_samples: 0,
             num_tracking_samples: 0,
             cn0: param.cn0,
             doppler_hz: param.doppler_hz,
+            phi: param.carrier_phase_shift,
             code_off_sec: param.code_phase_offset as f64 / PRN_CODE_LEN as f64 * 0.001 / 2.0, // XXX
             adr: 0.0,
             err_phase: 0.0,
@@ -136,7 +137,6 @@ impl GnssSatellite {
 
             code_phase_offset_rolling_buffer: vec![],
             phi_error_rolling_buffer: vec![],
-            phi_rolling_buffer: vec![],
             doppler_hz_rolling_buffer: vec![],
             disc_p_rolling_buffer: vec![],
             last_plot_ts: 0.0,
@@ -222,7 +222,6 @@ impl GnssSatellite {
 
         self.plot_iq_scatter();
         self.plot_code_phase_offset();
-        self.plot_phi();
         self.plot_phi_error();
         self.plot_doppler_hz();
 
@@ -236,16 +235,6 @@ impl GnssSatellite {
             self.code_phase_offset_rolling_buffer.as_slice(),
             50.0,
             &BLUE,
-        );
-    }
-
-    fn plot_phi(&self) {
-        plot_time_graph(
-            self.prn,
-            "phi",
-            self.phi_rolling_buffer.as_slice(),
-            0.5,
-            &BLACK,
         );
     }
 
@@ -401,11 +390,14 @@ impl GnssSatellite {
         }
 
         let b = if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN / 2.0 {
-            B_FLL_WIDE
+            B_FLL_WIDE // 10.0
         } else {
-            B_FLL_NARROW
+            B_FLL_NARROW // 2.-
         };
         let err_freq = (cross / dot).atan();
+        // ~= -40 * err_freq / 2 / PI ~= -6.36 * err_freq
+        // ~=  -8 * err_freq / 2 / PI ~= -1.27 * err_freq
+
         self.doppler_hz -= b / 0.25 * err_freq / 2.0 / PI;
     }
 
@@ -414,8 +406,9 @@ impl GnssSatellite {
             return;
         }
         let err_phase = (c_p.im / c_p.re).atan() / 2.0 / PI;
-        //let err_phase = c_p.im.atan2(c_p.re) / 2.0 / PI;
-        let w = B_PLL / 0.53;
+        let w = B_PLL / 0.53; // ~18.9
+        assert!(self.code_sec == 0.001);
+        // ~= 26 * (err_phase - err_phase_old) + 356 * err_phase * 0.001
         self.doppler_hz +=
             1.4 * w * (err_phase - self.err_phase) + w * w * err_phase * self.code_sec;
         self.err_phase = err_phase;
@@ -452,10 +445,10 @@ impl GnssSatellite {
     }
 
     fn tracking_process(&mut self, iq_vec2: &Vec<Complex64>) {
+        assert_eq!(self.samples_per_code, 2046);
         assert_eq!(self.code_sec, 0.001);
         assert_eq!(self.fs, 2046000.0);
         assert_eq!(self.fc, 1575420000.0);
-        assert_eq!(self.samples_per_code, 2046);
 
         let tau = self.code_sec;
         let fc = self.fi + self.doppler_hz;
@@ -480,14 +473,12 @@ impl GnssSatellite {
         self.run_dll(c_e, c_l);
         self.update_cn0(c_p, c_n);
 
-        self.phi_rolling_buffer.push(phi);
         self.code_phase_offset_rolling_buffer.push(code_off);
         self.disc_p_rolling_buffer.push(c_p * 1000.0);
         self.doppler_hz_rolling_buffer.push(self.doppler_hz);
         self.update_all_plots(false);
         self.num_tracking_samples += 1;
 
-        let phi_ = phi % PI;
         if self.ts_sec - self.last_log_ts > 3.0 {
             log::warn!(
                 "sat-{:2}: {} cn0={:.1} dopp={:5.0} code_off={:5.0} phi={:5.2} ts_sec={:.3}",
@@ -496,7 +487,7 @@ impl GnssSatellite {
                 self.cn0,
                 self.doppler_hz,
                 code_off,
-                phi_,
+                phi,
                 self.ts_sec,
             );
             self.last_log_ts = self.ts_sec;

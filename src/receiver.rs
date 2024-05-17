@@ -145,7 +145,7 @@ impl GnssReceiver {
         let len = self.cached_iq_vec.len();
 
         Ok(IQSample {
-            iq_vec: self.cached_iq_vec[len - 2 * get_num_samples_per_msec()..len].to_vec(),
+            iq_vec: self.cached_iq_vec[len - 2 * get_num_samples_per_msec()..].to_vec(),
             ts_sec: self.cached_ts_sec_tail,
         })
     }
