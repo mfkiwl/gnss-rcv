@@ -46,27 +46,26 @@ impl fmt::Display for IQFileType {
 
 pub struct IQRecording {
     file_path: PathBuf,
-    sample_rate: f64,
     file_type: IQFileType,
+    fs: f64,
 }
 
 impl IQRecording {
-    pub fn new(file_path: PathBuf, sample_rate: f64, file_type: IQFileType) -> Self {
+    pub fn new(file_path: PathBuf, fs: f64, file_type: IQFileType) -> Self {
         let file_size = file_path.metadata().unwrap().len();
         let sample_size = Self::get_sample_size_bytes(&file_type) as f64;
-        let recording_duration_sec = file_size as f64 / sample_rate as f64 / sample_size;
+        let recording_duration_sec = file_size as f64 / fs / sample_size;
 
         println!(
-            "file: {} -- {} {} duration: {:.1} secs",
+            "file: {} -- {file_type} {} duration: {:.1} secs",
             file_path.display().to_string().green(),
-            file_type,
             ByteSize::b(file_size).to_string_as(false).bold(),
             recording_duration_sec
         );
         Self {
             file_path,
-            sample_rate,
             file_type,
+            fs,
         }
     }
 
@@ -91,7 +90,7 @@ impl IQRecording {
         let ts = Instant::now();
         let mut iq_vec = vec![];
 
-        let off_file = off_samples as i64 * sample_size as i64;
+        let off_file = off_samples * sample_size;
 
         log::debug!(
             "read_iq_file: off_samples={} num_samples={}",
@@ -99,7 +98,7 @@ impl IQRecording {
             num_samples
         );
 
-        let _ = reader.seek(SeekFrom::Current(off_file)).unwrap();
+        let _ = reader.seek(SeekFrom::Current(off_file as i64)).unwrap();
 
         loop {
             let buf = reader.fill_buf()?;
@@ -188,7 +187,7 @@ impl IQRecording {
         log::debug!(
             "num_samples: {} -- {:.1} msec",
             format!("{}", iq_vec.len()).yellow(),
-            iq_vec.len() as f64 * 1000.0 / self.sample_rate as f64,
+            iq_vec.len() as f64 * 1000.0 / self.fs,
         );
         let bw = n as f64 * buf_size as f64 / 1024.0 / 1024.0 / ts.elapsed().as_secs_f64();
         log::debug!(
@@ -200,7 +199,7 @@ impl IQRecording {
 
         Ok(IQSample {
             iq_vec,
-            ts_sec: off_samples as f64 / self.sample_rate as f64,
+            ts_sec: off_samples as f64 / self.fs,
         })
     }
 }

@@ -80,7 +80,7 @@ impl GnssReceiver {
             format!("{}", self.cached_ts_sec_tail).green(),
         );
 
-        let samples_vec = self.cached_iq_vec[cached_vec_len - num_samples..cached_vec_len].to_vec();
+        let samples_vec = self.cached_iq_vec[cached_vec_len - num_samples..].to_vec();
         let samples_ts_sec = self.cached_ts_sec_tail - ACQUISITION_WINDOW_MSEC as f64 / 1000.0;
         let mut new_sats = HashMap::<usize, GnssCorrelationParam>::new();
 
@@ -144,9 +144,13 @@ impl GnssReceiver {
         }
         let len = self.cached_iq_vec.len();
 
+        // we pass 2 code worth of iq data back
+        // the timestamp given corresponds to the beginning of the last code
+        // [...code...][...code...]
+        //             ^
         Ok(IQSample {
             iq_vec: self.cached_iq_vec[len - 2 * get_num_samples_per_msec()..].to_vec(),
-            ts_sec: self.cached_ts_sec_tail,
+            ts_sec: self.cached_ts_sec_tail - 0.001,
         })
     }
 

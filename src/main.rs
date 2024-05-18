@@ -18,7 +18,7 @@ use gnss_rs::recording::IQFileType;
 use gnss_rs::recording::IQRecording;
 
 #[derive(StructOpt)]
-#[structopt(name = "gnss-test", about = "gnss tester")]
+#[structopt(name = "gnss-rs", about = "Gnss tracker")]
 struct Options {
     #[structopt(long, help = "print gold codes")]
     print_gold_code: bool,

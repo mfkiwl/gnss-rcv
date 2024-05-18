@@ -89,12 +89,14 @@ fn doppler_shifted_carrier(
     fs: f64,
     len: usize,
 ) -> Vec<Complex64> {
-    let imaginary = -2.0 * PI * doppler_hz;
+    let imaginary = 2.0 * PI * doppler_hz;
+    let phi_off = 2.0 * PI * phi;
 
     let carrier: Vec<Complex64> = (0..len)
         .map(|x| x as f64)
-        .map(|y| Complex64::from_polar(1.0, imaginary * (y / fs + off_sec) + phi))
+        .map(|y| Complex64::from_polar(1.0, -imaginary * (y / fs + off_sec) - phi_off))
         .collect();
+
     carrier
 }
 
