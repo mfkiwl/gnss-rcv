@@ -1,5 +1,5 @@
 [package]
-name = "gnss-test"
+name = "gnss-rs"
 version = "0.1.0"
 authors = ["Maxime Austruy <austruym@gmail.com>"]
 edition = "2021"

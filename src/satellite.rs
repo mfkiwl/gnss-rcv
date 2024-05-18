@@ -97,12 +97,8 @@ impl GnssSatellite {
         log::warn!(
             "{}",
             format!(
-                "sat {:2}: new: cn0={:.1} dopp={:5} code_off={:4} phi={:.2}",
-                prn,
-                param.cn0,
-                param.doppler_hz,
-                param.code_phase_offset,
-                param.carrier_phase_shift
+                "sat {prn:2}: new: cn0={:.1} dopp={:5} code_off={:4} phi={:.2}",
+                param.cn0, param.doppler_hz, param.code_phase_offset, param.carrier_phase_shift
             )
             .green()
         );
@@ -175,12 +171,9 @@ impl GnssSatellite {
         code_offset_idx: usize,
     ) {
         log::warn!(
-            "sat-{}: {} cn0={:.1} dopp={:5.0} code_off={} ts_sec={:.3}",
+            "sat-{}: {} cn0={cn0:.1} dopp={doppler_hz:5.0} code_off={code_offset_idx} ts_sec={:.3}",
             self.prn,
             format!("LOCK").green(),
-            cn0,
-            doppler_hz,
-            code_offset_idx,
             self.ts_sec,
         );
         self.tracking_init();
@@ -443,15 +436,9 @@ impl GnssSatellite {
             self.sum_corr_p = 0.0;
         }
     }
-
-    fn tracking_process(&mut self, iq_vec2: &Vec<Complex64>) {
-        assert_eq!(self.samples_per_code, 2046);
-        assert_eq!(self.code_sec, 0.001);
-        assert_eq!(self.fs, 2046000.0);
-        assert_eq!(self.fc, 1575420000.0);
-
+    fn get_code_offset(&mut self) -> (i32, f64) {
         let tau = self.code_sec;
-        let fc = self.fi + self.doppler_hz;
+        //let fc = self.fi + self.doppler_hz;
         self.adr += self.doppler_hz * tau; // accumulated Doppler
         self.code_off_sec -= self.doppler_hz / self.fc * tau; // carrier-aided code offset
 
@@ -461,9 +448,40 @@ impl GnssSatellite {
         if i < 0 {
             i += self.samples_per_code as i32;
         }
-        let phi = self.fi * tau + self.adr + fc * i as f64 / self.fs;
 
-        let (c_p, c_e, c_l, c_n) = self.compute_correlation(&iq_vec2, i, phi);
+        (i, code_off)
+    }
+
+    fn compute_carrier_offset(&mut self) {
+        self.phi =
+            -2.0 * PI * self.doppler_hz * (self.samples_per_code as f64 / self.fs + self.ts_sec)
+                + self.phi;
+    }
+
+    fn log_periodically(&mut self, code_idx: i32) {
+        if self.ts_sec - self.last_log_ts > 3.0 {
+            log::warn!(
+                "sat-{:2}: {} cn0={:.1} dopp={:5.0} code_idx={:4} phi={:5.2} ts_sec={:.3}",
+                self.prn,
+                format!("TRCK").green(),
+                self.cn0,
+                self.doppler_hz,
+                code_idx,
+                self.phi,
+                self.ts_sec,
+            );
+            self.last_log_ts = self.ts_sec;
+        }
+    }
+    fn tracking_process(&mut self, iq_vec2: &Vec<Complex64>) {
+        assert_eq!(self.samples_per_code, 2046);
+        assert_eq!(self.code_sec, 0.001);
+        assert_eq!(self.fs, 2046000.0);
+        assert_eq!(self.fc, 1575420000.0);
+
+        self.compute_carrier_offset();
+        let (code_idx, code_off) = self.get_code_offset();
+        let (c_p, c_e, c_l, c_n) = self.compute_correlation(&iq_vec2, code_idx, self.phi);
 
         if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN {
             self.run_fll(c_e, c_l);
@@ -479,19 +497,7 @@ impl GnssSatellite {
         self.update_all_plots(false);
         self.num_tracking_samples += 1;
 
-        if self.ts_sec - self.last_log_ts > 3.0 {
-            log::warn!(
-                "sat-{:2}: {} cn0={:.1} dopp={:5.0} code_off={:5.0} phi={:5.2} ts_sec={:.3}",
-                self.prn,
-                format!("TRCK").green(),
-                self.cn0,
-                self.doppler_hz,
-                code_off,
-                phi,
-                self.ts_sec,
-            );
-            self.last_log_ts = self.ts_sec;
-        }
+        self.log_periodically(code_idx);
 
         if self.cn0 < CN0_THRESHOLD_LOST {
             self.idle_start();
@@ -499,15 +505,14 @@ impl GnssSatellite {
     }
 
     fn idle_start(&mut self) {
-        let s = if self.state == TrackState::ACQUISITION {
+        let state_str = if self.state == TrackState::ACQUISITION {
             format!("IDLE").yellow()
         } else {
             format!("LOST").red()
         };
         log::warn!(
-            "sat-{}: {} cn0={:.1} ts_sec={:.3}",
+            "sat-{}: {state_str} cn0={:.1} ts_sec={:.3}",
             self.prn,
-            s,
             self.cn0,
             self.ts_sec,
         );

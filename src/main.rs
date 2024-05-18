@@ -1,7 +1,7 @@
 use chrono::Local;
 use colored::Colorize;
 use coredump::register_panic_handler;
-use gnss_test::plots::plot_remove_old_graph;
+use gnss_rs::plots::plot_remove_old_graph;
 use log::LevelFilter;
 use std::fs::File;
 use std::io::Write;
@@ -11,11 +11,11 @@ use std::sync::Arc;
 use std::time::Instant;
 use structopt::StructOpt;
 
-use gnss_test::constants::NUM_GPS_SATS;
-use gnss_test::gold_code::GoldCode;
-use gnss_test::receiver::GnssReceiver;
-use gnss_test::recording::IQFileType;
-use gnss_test::recording::IQRecording;
+use gnss_rs::constants::NUM_GPS_SATS;
+use gnss_rs::gold_code::GoldCode;
+use gnss_rs::receiver::GnssReceiver;
+use gnss_rs::recording::IQFileType;
+use gnss_rs::recording::IQRecording;
 
 #[derive(StructOpt)]
 #[structopt(name = "gnss-test", about = "gnss tester")]
@@ -92,7 +92,7 @@ fn main() -> std::io::Result<()> {
     init_ctrl_c(exit_req.clone());
 
     log::warn!(
-        "gnss-test: sampling: {} fi: {} off_msec={} num_msec={}",
+        "gnss-rs: sampling: {} fi: {} off_msec={} num_msec={}",
         format!("{:.1} KHz", opt.fs / 1000.0).bold(),
         format!("{:.1} KHz", opt.fi / 1000.0).bold(),
         opt.off_msec,
