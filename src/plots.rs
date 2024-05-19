@@ -72,29 +72,41 @@ pub fn plot_iq_scatter(prn: usize, series: &[Complex64]) {
     let file_name = format!("{}/sat-{}-iq-scatter.png", PLOT_FOLDER, prn);
     let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();
-    let delta = 2.0;
 
     if series.len() < 10 {
         return;
     }
 
-    let mut x_max = series
-        .iter()
-        .fold(0.0, |acc, c| if c.re > acc { c.re } else { acc });
-    x_max += delta;
-    let mut x_min = series
-        .iter()
-        .fold(0.0, |acc, c| if c.re < acc { c.re } else { acc });
-    x_min -= delta;
+    let delta = 1.3;
+    let factor = 1000.0;
+    let mut y_max = f64::MIN;
+    let mut y_min = f64::MAX;
+    let mut x_max = f64::MIN;
+    let mut x_min = f64::MAX;
 
-    let mut y_max = series
-        .iter()
-        .fold(0.0, |acc, c| if c.im > acc { c.im } else { acc });
-    y_max += delta;
-    let mut y_min = series
-        .iter()
-        .fold(0.0, |acc, c| if c.im < acc { c.im } else { acc });
-    y_min -= delta;
+    for c in series {
+        if c.im > y_max {
+            y_max = c.im;
+        }
+        if c.im < y_min {
+            y_min = c.im;
+        }
+        if c.re > x_max {
+            x_max = c.re;
+        }
+        if c.re < x_min {
+            x_min = c.re;
+        }
+    }
+    y_max = (y_max * delta * factor).round();
+    y_min = (y_min * delta * factor).round();
+    x_max = (x_max * delta * factor).round();
+    x_min = (x_min * delta * factor).round();
+    x_max = f64::max(x_max, y_max);
+    y_max = x_max;
+    x_min = f64::min(x_min, y_min);
+    y_min = x_min;
+
     let mut ctx = ChartBuilder::on(&root_area)
         .set_label_area_size(LabelAreaPosition::Left, 40)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
@@ -110,7 +122,7 @@ pub fn plot_iq_scatter(prn: usize, series: &[Complex64]) {
     ctx.draw_series(
         series
             .iter()
-            .map(|point| Circle::new((point.re, point.im), 1, &RED)),
+            .map(|c| Circle::new((c.re * factor, c.im * factor), 1, &RED)),
     )
     .unwrap();
 }

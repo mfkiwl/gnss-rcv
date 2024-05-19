@@ -24,7 +24,7 @@ const T_DLL: f64 = 0.01; // non-coherent integration time for DLL
 const T_CN0: f64 = 1.0; // averaging time for C/N0
 const B_FLL_WIDE: f64 = 10.0; // bandwidth of FLL wide Hz
 const B_FLL_NARROW: f64 = 2.0; // bandwidth of FLL narrow Hz
-const B_PLL: f64 = 10.0; // bandwidth of PLL filter Hz : 0.005 gives good results initially
+const B_PLL: f64 = 10.0; // bandwidth of PLL filter Hz
 const B_DLL: f64 = 0.5; // bandwidth of DLL filter Hz
 
 const DOPPLER_SPREAD_HZ: f64 = 8000.0;
@@ -116,16 +116,16 @@ impl GnssSatellite {
             code_sec: 0.001,
             samples_per_code: 2046,
 
-            sum_p: vec![vec![0.0; 2046]; DOPPLER_SPREAD_BINS],
             num_acq_samples: 0,
             num_idle_samples: 0,
             num_tracking_samples: 0,
             cn0: param.cn0,
             doppler_hz: param.doppler_hz,
-            phi: param.carrier_phase_shift,
+            phi: param.carrier_phase_shift / 2.0 / PI,
             code_off_sec: param.code_phase_offset as f64 / PRN_CODE_LEN as f64 * 0.001 / 2.0, // XXX
             adr: 0.0,
             err_phase: 0.0,
+            sum_p: vec![vec![0.0; 2046]; DOPPLER_SPREAD_BINS],
             sum_corr_e: 0.0,
             sum_corr_l: 0.0,
             sum_corr_p: 0.0,
@@ -282,21 +282,20 @@ impl GnssSatellite {
 
     fn acquisition_process(&mut self, iq_vec2: &Vec<Complex64>) {
         // only take the last minute worth of data
-        let iq_vec = &iq_vec2[self.samples_per_code..];
+        let iq_vec_slice = &iq_vec2[self.samples_per_code..];
         let step_hz = 2.0 * DOPPLER_SPREAD_HZ / DOPPLER_SPREAD_BINS as f64;
 
         for i in 0..DOPPLER_SPREAD_BINS {
             let doppler_hz = -DOPPLER_SPREAD_HZ + i as f64 * step_hz;
-            let c_non_coherent = self.integrate_correlation(iq_vec, doppler_hz);
+            let c_non_coherent = self.integrate_correlation(iq_vec_slice, doppler_hz);
             assert_eq!(c_non_coherent.len(), self.samples_per_code);
 
             for j in 0..self.samples_per_code {
-                self.sum_p[i][j] += c_non_coherent[j]; // norm_sqr()
+                self.sum_p[i][j] += c_non_coherent[j];
             }
         }
 
         self.num_acq_samples += 1;
-        assert!(self.num_acq_samples <= 10);
 
         if self.num_acq_samples as f64 * self.code_sec >= T_ACQ {
             let mut idx = 0;
@@ -392,13 +391,15 @@ impl GnssSatellite {
         (corr_prompt, corr_early, corr_late, corr_neutral)
     }
 
-    fn run_fll(&mut self, c_e: Complex64, c_l: Complex64) {
+    fn run_fll(&mut self) {
         if self.num_tracking_samples < 2 {
             return;
         }
-
-        let dot = c_e.re * c_l.re + c_e.im * c_l.im;
-        let cross = c_e.re * c_l.im - c_e.im * c_l.re;
+        let len = self.disc_p_rolling_buffer.len();
+        let c1 = self.disc_p_rolling_buffer[len - 1];
+        let c2 = self.disc_p_rolling_buffer[len - 2];
+        let dot = c1.re * c2.re + c1.im * c2.im;
+        let cross = c1.re * c2.im - c1.im * c2.re;
 
         if dot == 0.0 {
             return;
@@ -409,11 +410,11 @@ impl GnssSatellite {
         } else {
             B_FLL_NARROW // 2.-
         };
-        let err_freq = (cross / dot).atan();
+        let err_freq = (cross / dot).atan() / 2.0 / PI;
         // ~= -40 * err_freq / 2 / PI ~= -6.36 * err_freq
         // ~=  -8 * err_freq / 2 / PI ~= -1.27 * err_freq
 
-        self.doppler_hz -= b / 0.25 * err_freq / 2.0 / PI;
+        self.doppler_hz -= b / 0.25 * err_freq;
     }
 
     fn run_pll(&mut self, c_p: Complex64) {
@@ -422,8 +423,6 @@ impl GnssSatellite {
         }
         let err_phase = (c_p.im / c_p.re).atan() / 2.0 / PI;
         let w = B_PLL / 0.53; // ~18.9
-        assert!(self.code_sec == 0.001);
-        // ~= 26 * (err_phase - err_phase_old) + 356 * err_phase * 0.001
         self.doppler_hz +=
             1.4 * w * (err_phase - self.err_phase) + w * w * err_phase * self.code_sec;
         self.err_phase = err_phase;
@@ -462,7 +461,7 @@ impl GnssSatellite {
         assert_eq!(self.code_sec, 0.001);
 
         let tau = self.code_sec;
-        //let fc = self.fi + self.doppler_hz;
+        let fc = self.fi + self.doppler_hz;
         self.adr += self.doppler_hz * tau; // accumulated Doppler
         self.code_off_sec -= self.doppler_hz / self.fc * tau; // carrier-aided code offset
 
@@ -473,9 +472,7 @@ impl GnssSatellite {
             code_idx += self.samples_per_code as i32;
         }
 
-        self.phi = self.fi * tau + self.adr + self.fc * code_idx as f64 / self.fs;
-        //    -2.0 * PI * self.doppler_hz * (self.samples_per_code as f64 / self.fs + self.ts_sec)
-        //        + self.phi;
+        self.phi = self.fi * tau + self.adr + fc * code_idx as f64 / self.fs;
 
         code_idx
     }
@@ -503,17 +500,19 @@ impl GnssSatellite {
 
         let code_idx = self.get_code_and_carrier_phase();
         let (c_p, c_e, c_l, c_n) = self.compute_correlation(&iq_vec2, code_idx);
+        self.disc_p_rolling_buffer.push(c_p);
 
         if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN {
-            self.run_fll(c_e, c_l);
+            self.run_fll();
         } else {
             self.run_pll(c_p);
         }
+
         self.run_dll(c_e, c_l);
+
         self.update_cn0(c_p, c_n);
 
         self.code_phase_offset_rolling_buffer.push(code_idx as f64);
-        self.disc_p_rolling_buffer.push(c_p * 1000.0);
         self.doppler_hz_rolling_buffer.push(self.doppler_hz);
         self.update_all_plots(false);
         self.num_tracking_samples += 1;

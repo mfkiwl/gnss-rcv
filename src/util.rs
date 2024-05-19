@@ -13,17 +13,6 @@ pub fn norm(v: &Vec<Complex64>) -> f64 {
     norm_square(v).sqrt()
 }
 
-pub fn get_normalized_correlation_strength(corr: &Vec<f64>) -> f64 {
-    let (peak_idx, peak_val) = get_max_with_idx(corr);
-    let mut all_but_peak = 0.0;
-    for i in 0..corr.len() {
-        if i != peak_idx {
-            all_but_peak += corr[i];
-        }
-    }
-    peak_val / (all_but_peak / (corr.len() - 1) as f64)
-}
-
 pub fn get_max_with_idx(v: &Vec<f64>) -> (usize, f64) {
     let mut max = 0.0f64;
     let mut idx = 0;
@@ -115,42 +104,3 @@ pub fn doppler_shift(
         iq_vec[i] = iq_vec[i] * carrier[i];
     }
 }
-
-pub fn vector_mean(vec: &[f64]) -> f64 {
-    let n = vec.len() as f64;
-    vec.iter().fold(0.0, |acc, v| acc + *v) / n
-}
-
-pub fn vector_mean_complex(vec: &[Complex64]) -> Complex64 {
-    let n = vec.len() as f64;
-    vec.iter()
-        .fold(Complex64 { re: 0.0, im: 0.0 }, |acc, v| acc + *v)
-        / n
-}
-
-pub fn vector_variance(vec: &[f64]) -> f64 {
-    let n = vec.len() as f64;
-    let mean = vector_mean(vec);
-    vec.iter().fold(0.0, |acc, v| acc + (*v - mean).powi(2)) / n
-}
-
-/*
-//extern crate "nalgebra" as na;
-use nalgebra::DMatrix;
-
-pub fn get_circularity(vec: &[Complex64]) -> f64 {
-    let len = vec.len();
-    let mut corr_re_im: Vec<f64>;
-
-    for v in vec {
-        corr_re_im.push(v.re);
-    }
-    for v in vec {
-        corr_re_im.push(v.im);
-    }
-    let mat = DMatrix::from_col_vec(len, 2, corr_re_im);
-
-    let cov = nalgebra::Cov(&mat);
-    0.0
-}
-*/

@@ -2,7 +2,6 @@ use colored::Colorize;
 use rayon::prelude::*;
 use rustfft::{num_complex::Complex64, FftPlanner};
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::time::Instant;
 
 use crate::acquisition::try_acquisition_one_sat;
@@ -27,19 +26,10 @@ pub struct GnssReceiver {
     cached_ts_sec_tail: f64,
     last_acq_ts_sec: f64,
     satellites: HashMap<usize, GnssSatellite>,
-    satellites_found: HashSet<usize>,
 }
 
 impl Drop for GnssReceiver {
-    fn drop(&mut self) {
-        if self.satellites_found.is_empty() {
-            return;
-        }
-        log::warn!("found {} satellites", self.satellites_found.len());
-        for prn in &self.satellites_found {
-            log::warn!("sat-{}", *prn)
-        }
-    }
+    fn drop(&mut self) {}
 }
 
 impl GnssReceiver {
@@ -62,7 +52,6 @@ impl GnssReceiver {
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_ts_sec_tail: 0.0,
             satellites: HashMap::<usize, GnssSatellite>::new(),
-            satellites_found: HashSet::<usize>::new(),
         }
     }
 
@@ -116,7 +105,6 @@ impl GnssReceiver {
                         *id,
                         GnssSatellite::new(*id, &mut self.gold_code, self.fs, self.fi, *param),
                     );
-                    self.satellites_found.insert(*id);
                 }
             }
         }
