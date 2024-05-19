@@ -71,32 +71,20 @@ pub fn calc_correlation(
     v_res
 }
 
-fn doppler_shifted_carrier(
-    doppler_hz: f64,
-    off_sec: f64,
-    phi: f64,
-    fs: f64,
-    len: usize,
-) -> Vec<Complex64> {
+fn doppler_shifted_carrier(doppler_hz: f64, phi: f64, fs: f64, len: usize) -> Vec<Complex64> {
     let imaginary = 2.0 * PI * doppler_hz;
     let phi_off = 2.0 * PI * phi;
 
     let carrier: Vec<Complex64> = (0..len)
         .map(|x| x as f64)
-        .map(|y| Complex64::from_polar(1.0, -imaginary * (y / fs + off_sec) - phi_off))
+        .map(|y| Complex64::from_polar(1.0, -imaginary * (y / fs) - phi_off))
         .collect();
 
     carrier
 }
 
-pub fn doppler_shift(
-    iq_vec: &mut Vec<Complex64>,
-    doppler_hz: f64,
-    off_sec: f64,
-    phi: f64,
-    fs: f64,
-) {
-    let carrier = doppler_shifted_carrier(doppler_hz, off_sec, phi, fs, iq_vec.len());
+pub fn doppler_shift(iq_vec: &mut Vec<Complex64>, doppler_hz: f64, phi: f64, fs: f64) {
+    let carrier = doppler_shifted_carrier(doppler_hz, phi, fs, iq_vec.len());
 
     assert_eq!(iq_vec.len(), carrier.len());
 

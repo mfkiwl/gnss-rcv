@@ -36,7 +36,7 @@ fn integrate_correlation(
         assert_eq!(iq_vec_sample.len(), prn_code_fft.len());
 
         //let shift_sample_sec = (idx * num_samples_per_msec) as f64 / sample.sample_rate as f64;
-        doppler_shift(&mut iq_vec_sample, doppler_hz, 0.0, 0.0, sample_rate);
+        doppler_shift(&mut iq_vec_sample, doppler_hz, 0.0, sample_rate);
 
         let corr = calc_correlation(fft_planner, &iq_vec_sample, &prn_code_fft);
         for i in 0..corr.len() {

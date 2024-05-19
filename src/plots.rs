@@ -77,7 +77,7 @@ pub fn plot_iq_scatter(prn: usize, series: &[Complex64]) {
         return;
     }
 
-    let delta = 1.3;
+    let delta = 1.4;
     let factor = 1000.0;
     let mut y_max = f64::MIN;
     let mut y_min = f64::MAX;
