@@ -92,21 +92,8 @@ impl Drop for GnssSatellite {
 }
 
 impl GnssSatellite {
-    pub fn new(
-        prn: usize,
-        gold_code: &mut GoldCode,
-        fs: f64,
-        fi: f64,
-        param: GnssCorrelationParam,
-    ) -> Self {
-        log::warn!(
-            "{}",
-            format!(
-                "sat {prn:2}: new: cn0={:.1} dopp={:5} code_off={:4} phi={:.2}",
-                param.cn0, param.doppler_hz, param.code_phase_offset, param.carrier_phase_shift
-            )
-            .green()
-        );
+    pub fn new(prn: usize, gold_code: &mut GoldCode, fs: f64, fi: f64) -> Self {
+        log::info!("{}", format!("sat {prn:2}: new: ",).green());
 
         Self {
             prn,
@@ -124,10 +111,10 @@ impl GnssSatellite {
             num_acq_samples: 0,
             num_idle_samples: 0,
             num_tracking_samples: 0,
-            cn0: param.cn0,
-            doppler_hz: param.doppler_hz,
-            phi: param.carrier_phase_shift / 2.0 / PI,
-            code_off_sec: param.code_phase_offset as f64 / PRN_CODE_LEN as f64 * 0.001 / 2.0, // XXX
+            cn0: 0.0,
+            doppler_hz: 0.0,
+            phi: 0.0,
+            code_off_sec: 0.0,
             adr: 0.0,
             err_phase: 0.0,
             sum_p: vec![vec![0.0; 2046]; DOPPLER_SPREAD_BINS],
@@ -142,24 +129,29 @@ impl GnssSatellite {
             corr_p_hist: vec![],
             last_plot_ts: 0.0,
             last_log_ts: 0.0,
-            state: TrackState::TRACKING,
+            state: TrackState::ACQUISITION,
 
             nav: Navigation::new(),
         }
     }
 
     fn idle_start(&mut self) {
-        let state_str = if self.state == TrackState::ACQUISITION {
-            format!("IDLE").yellow()
+        if self.state == TrackState::TRACKING {
+            log::warn!(
+                "sat-{}: {} cn0={:.1} ts_sec={:.3}",
+                self.prn,
+                format!("LOST").red(),
+                self.cn0,
+                self.ts_sec,
+            );
         } else {
-            format!("LOST").red()
-        };
-        log::warn!(
-            "sat-{}: {state_str} cn0={:.1} ts_sec={:.3}",
-            self.prn,
-            self.cn0,
-            self.ts_sec,
-        );
+            log::info!(
+                "sat-{}: IDLE cn0={:.1} ts_sec={:.3}",
+                self.prn,
+                self.cn0,
+                self.ts_sec,
+            );
+        }
         self.state = TrackState::IDLE;
         self.num_idle_samples = 0;
     }

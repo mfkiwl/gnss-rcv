@@ -1,30 +1,25 @@
-use colored::Colorize;
 use rayon::prelude::*;
-use rustfft::{num_complex::Complex64, FftPlanner};
+use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
-use std::time::Instant;
 
-use crate::acquisition::try_acquisition_one_sat;
 use crate::constants::ACQUISITION_WINDOW_MSEC;
 use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
 use crate::satellite::GnssSatellite;
-use crate::types::GnssCorrelationParam;
+
 use crate::types::IQSample;
 use crate::util::get_num_samples_per_msec;
 
-const ACQUISITION_PERIOD_SEC: f64 = 3.0; // run acquisition every 3sec
+//const ACQUISITION_PERIOD_SEC: f64 = 3.0; // run acquisition every 3sec
 
 pub struct GnssReceiver {
     gold_code: GoldCode,
     pub recording: IQRecording,
     fs: f64,
     fi: f64,
-    sat_vec: Vec<usize>,
     off_samples: usize,
     cached_iq_vec: Vec<Complex64>,
     cached_ts_sec_tail: f64,
-    last_acq_ts_sec: f64,
     satellites: HashMap<usize, GnssSatellite>,
 }
 
@@ -39,22 +34,28 @@ impl GnssReceiver {
         fs: f64,
         fi: f64,
         off_msec: usize,
-        sat_vec: Vec<usize>,
     ) -> Self {
         Self {
             gold_code,
             recording,
             fs,
             fi,
-            sat_vec,
             off_samples: off_msec * get_num_samples_per_msec(),
-            last_acq_ts_sec: 0.0,
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_ts_sec_tail: 0.0,
             satellites: HashMap::<usize, GnssSatellite>::new(),
         }
     }
 
+    pub fn init(&mut self, sat_vec: Vec<usize>) {
+        for sv in sat_vec {
+            self.satellites.insert(
+                sv,
+                GnssSatellite::new(sv, &mut self.gold_code, self.fs, self.fi),
+            );
+        }
+    }
+    /*
     fn try_periodic_acquisition(&mut self) {
         if self.cached_ts_sec_tail < self.last_acq_ts_sec + ACQUISITION_PERIOD_SEC {
             return;
@@ -112,6 +113,7 @@ impl GnssReceiver {
         log::debug!("acquisition: {} msec", ts.elapsed().as_millis());
         self.last_acq_ts_sec = self.cached_ts_sec_tail;
     }
+    */
 
     fn fetch_samples_msec(&mut self) -> Result<IQSample, Box<dyn std::error::Error>> {
         let num_samples = if self.cached_iq_vec.len() == 0 {
@@ -144,8 +146,6 @@ impl GnssReceiver {
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let samples = self.fetch_samples_msec()?;
-
-        self.try_periodic_acquisition();
 
         self.satellites
             .par_iter_mut()

@@ -113,8 +113,9 @@ fn main() -> std::io::Result<()> {
     plot_remove_old_graph();
     let gold_code = GoldCode::new();
     let recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
-    let mut receiver =
-        GnssReceiver::new(gold_code, recording, opt.fs, opt.fi, opt.off_msec, sat_vec);
+    let mut receiver = GnssReceiver::new(gold_code, recording, opt.fs, opt.fi, opt.off_msec);
+
+    receiver.init(sat_vec);
     let mut n = 0;
     let ts = Instant::now();
 
