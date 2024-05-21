@@ -93,13 +93,35 @@ pub fn doppler_shift(iq_vec: &mut Vec<Complex64>, doppler_hz: f64, phi: f64, fs:
     }
 }
 
-pub fn getbitu(buf: &[u8], pos: usize, len: usize) -> u32 {
+pub fn getbitu(buf: &[u8], pos: u32, len: u32) -> u32 {
     assert!(len <= 32);
     let mut bits = 0u32;
     for i in pos..pos + len {
-        bits = (bits << 1) | ((buf[i / 8] >> (7 - i % 8)) as u32 & 1u32);
+        bits = (bits << 1) | ((buf[(i / 8) as usize] >> (7 - i % 8)) as u32 & 1u32);
     }
     bits
+}
+
+pub fn getbits(buf: &[u8], pos: u32, len: u32) -> i32 {
+    let bits = getbitu(buf, pos, len);
+
+    let sign: u32 = (1 << (len - 1)) & bits;
+    let mask = (0xffffffff >> (len - 1)) << (len - 1);
+    let res: u32 = if sign != 0 { bits | mask } else { bits & !mask };
+    res as i32
+}
+
+/* extract unsigned/signed bits ------------------------------------------------
+* extract unsigned/signed bits from byte data (two components case)
+* args   : uint8_t *buff    I   byte data
+*          int    p1        I   first bit start position (bits)
+*          int    l1        I   first bit length (bits)
+*          int    p2        I   second bit start position (bits)
+*          int    l2        I   seconf bit length (bits)
+* return : extracted unsigned/signed bits
+*-----------------------------------------------------------------------------*/
+pub fn getbitu2(buf: &[u8], p1: u32, l1: u32, p2: u32, l2: u32) -> u32 {
+    (getbitu(buf, p1, l1) << l2) + getbitu(buf, p2, l2)
 }
 
 pub fn pack_bits(bits: &[u8], nz: usize, dst: &mut Vec<u8>) {

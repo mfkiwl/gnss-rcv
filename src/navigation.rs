@@ -1,6 +1,6 @@
 use crate::{
     satellite::GnssSatellite,
-    util::{bmatch_n, bmatch_r, getbitu, hex_str, pack_bits, xor_bits},
+    util::{bmatch_n, bmatch_r, getbits, getbitu, getbitu2, hex_str, pack_bits, xor_bits},
 };
 use colored::Colorize;
 
@@ -9,13 +9,54 @@ const SDR_MAX_DATA: usize = 4096;
 const THRESHOLD_SYNC: f64 = 0.4; // 0.04;
 const THRESHOLD_LOST: f64 = 0.03; // 0.003;
 
+const P2_31: f64 = 4.656612873077393E-10; /* 2^-31 */
+const P2_43: f64 = 1.136868377216160E-13; /* 2^-43 */
+const P2_55: f64 = 2.775557561562891E-17; /* 2^-55 */
+
 #[derive(PartialEq)]
 enum SyncState {
     NORMAL,
     REVERSED,
     NONE,
 }
+impl Default for SyncState {
+    fn default() -> Self {
+        SyncState::NORMAL
+    }
+}
 
+#[derive(Default)]
+struct Ephemeris {
+    tow_gpst: f64,
+    tlm: u32,
+
+    //iode: u32,
+    iodc: u32, /* IODE,IODC */
+    sva: u32,  /* SV accuracy (URA index) */
+    svh: u32,  /* SV health (0:ok) */
+    week: u32, /* GPS/QZS: gps week, GAL: galileo week */
+    code: u32, /* GPS/QZS: code on L2, GAL/CMP: data sources */
+    flag: u32, /* GPS/QZS: L2 P data flag, CMP: nav type */
+    /* GPS/QZS:tgd[0]=TGD */
+    /* GAL    :tgd[0]=BGD E5a/E1,tgd[1]=BGD E5b/E1 */
+    /* CMP    :tgd[0]=BGD1,tgd[1]=BGD2 */
+    f0: f64,
+    f1: f64,
+    f2: f64, /* SV clock parameters (af0,af1,af2) */
+    tgd: f64, /* group delay parameters */
+             /*
+             gtime_t toe,toc,ttr; /* Toe,Toc,T_trans */
+                                 /* SV orbit parameters */
+             double A,e,i0,OMG0,omg,M0,deln,OMGd,idot;
+             double crc,crs,cuc,cus,cic,cis;
+             double toes;        /* Toe (s) in week */
+             double fit;         /* fit interval (h) */
+             double f0,f1,f2;    /* SV clock parameters (af0,af1,af2) */
+
+                                 */
+}
+
+#[derive(Default)]
 pub struct Navigation {
     ssync: usize,
     fsync: usize,
@@ -28,22 +69,17 @@ pub struct Navigation {
     time_data_sec: f64,
     count_ok: usize,
     count_err: usize,
+    eph: Ephemeris,
 }
 
 impl Navigation {
     pub fn new() -> Self {
         Self {
-            ssync: 0,
-            fsync: 0,
             sync_state: SyncState::NORMAL,
-            seq: 0,
-            num_err: 0,
             syms: vec![0; SDR_MAX_NSYM],
             tsyms: vec![0.0; SDR_MAX_NSYM],
             data: vec![0u8; SDR_MAX_DATA],
-            time_data_sec: 0.0,
-            count_ok: 0,
-            count_err: 0,
+            ..Default::default()
         }
     }
 
@@ -141,6 +177,49 @@ impl GnssSatellite {
         false
     }
 
+    fn nav_decode_lnav_subframe1(&mut self) {
+        let data = &self.nav.data[0..];
+        self.nav.eph.week = getbitu(data, 60, 10) + 1024;
+        self.nav.eph.code = getbitu(data, 70, 2);
+        self.nav.eph.sva = getbitu(data, 72, 4);
+        self.nav.eph.svh = getbitu(data, 76, 6);
+        self.nav.eph.iodc = getbitu2(data, 82, 2, 210, 8);
+        self.nav.eph.flag = getbitu(data, 90, 1);
+        self.nav.eph.tgd = getbits(data, 196, 8) as f64 * P2_31;
+        self.nav.eph.f2 = getbits(data, 240, 8) as f64 * P2_55;
+        self.nav.eph.f1 = getbits(data, 248, 16) as f64 * P2_43;
+        self.nav.eph.f0 = getbits(data, 270, 22) as f64 * P2_31;
+    }
+    fn nav_decode_lnav_subframe2(&mut self) {}
+    fn nav_decode_lnav_subframe3(&mut self) {}
+    fn nav_decode_lnav_subframe4(&mut self) {}
+    fn nav_decode_lnav_subframe5(&mut self) {}
+
+    fn nav_decode_lnav_subframe(&mut self) -> u32 {
+        let data = &self.nav.data[0..];
+        let id = getbitu(data, 49, 3);
+        self.nav.eph.tow_gpst = getbitu(data, 30, 17) as f64 * 6.0;
+        let alert = getbitu(data, 47, 1);
+        let anti_spoof = getbitu(data, 48, 1);
+        self.nav.eph.tlm = getbitu(data, 8, 14);
+
+        log::warn!(
+            "sat-{}: subframe-id={id} tow={:.2} as={anti_spoof} alert={alert}",
+            self.prn,
+            self.nav.eph.tow_gpst,
+        );
+
+        match id {
+            1 => self.nav_decode_lnav_subframe1(),
+            2 => self.nav_decode_lnav_subframe2(),
+            3 => self.nav_decode_lnav_subframe3(),
+            4 => self.nav_decode_lnav_subframe4(),
+            5 => self.nav_decode_lnav_subframe5(),
+            _ => log::warn!("sat-{}: invalid subframe id={}", self.prn, id),
+        }
+        id
+    }
+
     fn nav_decode_lnav(&mut self, sync: SyncState) {
         let mut buf = vec![];
         let rev = if sync == SyncState::NORMAL { 0 } else { 1 };
@@ -157,12 +236,15 @@ impl GnssSatellite {
             self.nav.fsync = self.num_tracking_samples;
             self.nav.sync_state = sync;
             pack_bits(&buf, 0, &mut self.nav.data);
-            self.nav.seq = getbitu(&self.nav.data[0..], 30 as usize, 17 as usize); // tow (x 6s)
+
+            self.nav.seq = getbitu(&self.nav.data[0..], 30, 17); // tow (x 6s)
             self.nav.count_ok += 1;
             self.nav.time_data_sec = ts_sec;
 
+            let id = self.nav_decode_lnav_subframe();
+
             let hex_str = hex_str(&self.nav.data[0..], 300);
-            log::warn!("sat-{}: LNAV: {}", self.prn, hex_str);
+            log::warn!("sat-{}: LNAV: id={} -- {}", self.prn, id, hex_str);
         } else {
             self.nav.fsync = 0;
             self.nav.sync_state = SyncState::NORMAL;
@@ -177,17 +259,17 @@ impl GnssSatellite {
             0x2EC7CD2, 0x1763E69, 0x2BB1F34, 0x15D8F9A, 0x1AEC7CD, 0x22DEA27,
         ];
 
-        let mut buff: u32 = 0;
+        let mut data: u32 = 0;
         for i in 0..10 {
             for j in 0..30 {
-                buff = (buff << 1) | syms[i * 30 + j] as u32;
+                data = (data << 1) | syms[i * 30 + j] as u32;
             }
-            if buff & (1 << 30) != 0 {
-                buff = buff ^ 0x3FFFFFC0;
+            if data & (1 << 30) != 0 {
+                data = data ^ 0x3FFFFFC0;
             }
             for j in 0..6 {
-                let v0: u32 = (buff >> 6) & mask[j];
-                let v1: u8 = ((buff >> (5 - j)) & 1) as u8;
+                let v0: u32 = (data >> 6) & mask[j];
+                let v1: u8 = ((data >> (5 - j)) & 1) as u8;
                 if xor_bits(v0) != v1 {
                     return false;
                 }
