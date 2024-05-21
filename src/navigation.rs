@@ -264,27 +264,27 @@ impl GnssSatellite {
 
     fn nav_decode_lnav_subframe(&mut self) -> u32 {
         let data = &self.nav.data[0..];
-        let id = getbitu(data, 49, 3);
+        let subframe_id = getbitu(data, 49, 3);
         self.nav.eph.tow_gpst = getbitu(data, 30, 17) as f64 * 6.0;
         let alert = getbitu(data, 47, 1);
         let anti_spoof = getbitu(data, 48, 1);
         self.nav.eph.tlm = getbitu(data, 8, 14);
 
         log::warn!(
-            "sat-{}: subframe-id={id} tow={:.2} as={anti_spoof} alert={alert}",
+            "sat-{}: subframe-id={subframe_id} tow={:.2} as={anti_spoof} alert={alert}",
             self.prn,
             self.nav.eph.tow_gpst,
         );
 
-        match id {
+        match subframe_id {
             1 => self.nav_decode_lnav_subframe1(),
             2 => self.nav_decode_lnav_subframe2(),
             3 => self.nav_decode_lnav_subframe3(),
             4 => self.nav_decode_lnav_subframe4(),
             5 => self.nav_decode_lnav_subframe5(),
-            _ => log::warn!("sat-{}: invalid subframe id={}", self.prn, id),
+            _ => log::warn!("sat-{}: invalid subframe id={subframe_id}", self.prn),
         }
-        id
+        subframe_id
     }
 
     fn nav_decode_lnav(&mut self, sync: SyncState) {
@@ -311,7 +311,7 @@ impl GnssSatellite {
             let id = self.nav_decode_lnav_subframe();
 
             let hex_str = hex_str(&self.nav.data[0..], 300);
-            log::warn!("sat-{}: LNAV: id={} -- {}", self.prn, id, hex_str);
+            log::warn!("sat-{}: LNAV: id={id} -- {}", self.prn, hex_str);
         } else {
             self.nav.fsync = 0;
             self.nav.sync_state = SyncState::NORMAL;
