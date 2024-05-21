@@ -124,6 +124,14 @@ pub fn getbitu2(buf: &[u8], p1: u32, l1: u32, p2: u32, l2: u32) -> u32 {
     (getbitu(buf, p1, l1) << l2) + getbitu(buf, p2, l2)
 }
 
+pub fn getbits2(buf: &[u8], p1: u32, l1: u32, p2: u32, l2: u32) -> i32 {
+    if getbitu(buf, p1, 1) != 0 {
+        ((getbits(buf, p1, l1) << l2) + getbitu(buf, p2, l2) as i32) as i32
+    } else {
+        getbitu2(buf, p1, l1, p2, l2) as i32
+    }
+}
+
 pub fn pack_bits(bits: &[u8], nz: usize, dst: &mut Vec<u8>) {
     let len = (bits.len() + nz + 7) / 8;
     dst[0..len].fill(0);

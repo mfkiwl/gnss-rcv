@@ -1,6 +1,8 @@
 use crate::{
     satellite::GnssSatellite,
-    util::{bmatch_n, bmatch_r, getbits, getbitu, getbitu2, hex_str, pack_bits, xor_bits},
+    util::{
+        bmatch_n, bmatch_r, getbits, getbits2, getbitu, getbitu2, hex_str, pack_bits, xor_bits,
+    },
 };
 use colored::Colorize;
 
@@ -9,9 +11,14 @@ const SDR_MAX_DATA: usize = 4096;
 const THRESHOLD_SYNC: f64 = 0.4; // 0.04;
 const THRESHOLD_LOST: f64 = 0.03; // 0.003;
 
+const P2_5: f64 = 0.03125; /* 2^-5 */
+const P2_19: f64 = 1.907348632812500E-06; /* 2^-19 */
+const P2_29: f64 = 1.862645149230957E-09; /* 2^-29 */
 const P2_31: f64 = 4.656612873077393E-10; /* 2^-31 */
+const P2_33: f64 = 1.164153218269348E-10; /* 2^-33 */
 const P2_43: f64 = 1.136868377216160E-13; /* 2^-43 */
 const P2_55: f64 = 2.775557561562891E-17; /* 2^-55 */
+const SC2RAD: f64 = 3.1415926535898; /* semi-circle to radian (IS-GPS) */
 
 #[derive(PartialEq)]
 enum SyncState {
@@ -27,10 +34,11 @@ impl Default for SyncState {
 
 #[derive(Default)]
 struct Ephemeris {
+    update: bool,
     tow_gpst: f64,
     tlm: u32,
 
-    //iode: u32,
+    iode: u32,
     iodc: u32, /* IODE,IODC */
     sva: u32,  /* SV accuracy (URA index) */
     svh: u32,  /* SV health (0:ok) */
@@ -42,18 +50,35 @@ struct Ephemeris {
     /* CMP    :tgd[0]=BGD1,tgd[1]=BGD2 */
     f0: f64,
     f1: f64,
-    f2: f64, /* SV clock parameters (af0,af1,af2) */
+    f2: f64,  /* SV clock parameters (af0,af1,af2) */
     tgd: f64, /* group delay parameters */
-             /*
-             gtime_t toe,toc,ttr; /* Toe,Toc,T_trans */
-                                 /* SV orbit parameters */
-             double A,e,i0,OMG0,omg,M0,deln,OMGd,idot;
-             double crc,crs,cuc,cus,cic,cis;
-             double toes;        /* Toe (s) in week */
-             double fit;         /* fit interval (h) */
-             double f0,f1,f2;    /* SV clock parameters (af0,af1,af2) */
+    omg0: f64,
+    omgd: f64,
+    omg: f64,
+    cic: f64,
+    cis: f64,
+    crc: f64,
+    crs: f64,
+    cus: f64,
+    cuc: f64,
+    idot: f64,
+    i0: f64,
+    m0: f64,
+    a: f64,
+    e: f64,
+    deln: f64,
+    toes: f64,
+    fit: f64,
+    /*
+    gtime_t toe,toc,ttr; /* Toe,Toc,T_trans */
+                        /* SV orbit parameters */
+    double A,e,i0,OMG0,omg,M0,deln,OMGd,idot;
+    double crc,crs,cuc,cus,cic,cis;
+    double toes;        /* Toe (s) in week */
+    double fit;         /* fit interval (h) */
 
-                                 */
+
+                        */
 }
 
 #[derive(Default)]
@@ -179,6 +204,7 @@ impl GnssSatellite {
 
     fn nav_decode_lnav_subframe1(&mut self) {
         let data = &self.nav.data[0..];
+
         self.nav.eph.week = getbitu(data, 60, 10) + 1024;
         self.nav.eph.code = getbitu(data, 70, 2);
         self.nav.eph.sva = getbitu(data, 72, 4);
@@ -190,8 +216,49 @@ impl GnssSatellite {
         self.nav.eph.f1 = getbits(data, 248, 16) as f64 * P2_43;
         self.nav.eph.f0 = getbits(data, 270, 22) as f64 * P2_31;
     }
-    fn nav_decode_lnav_subframe2(&mut self) {}
-    fn nav_decode_lnav_subframe3(&mut self) {}
+
+    fn nav_decode_lnav_subframe2(&mut self) {
+        let data = &self.nav.data[0..];
+        let oldiode = self.nav.eph.iode;
+
+        self.nav.eph.iode = getbitu(data, 60, 8);
+        self.nav.eph.crs = getbits(data, 68, 16) as f64 * P2_5;
+        self.nav.eph.deln = getbits(data, 90, 16) as f64 * P2_43 * SC2RAD;
+        self.nav.eph.m0 = getbits2(data, 106, 8, 120, 24) as f64 * P2_31 * SC2RAD;
+        self.nav.eph.cuc = getbits(data, 150, 16) as f64 * P2_29;
+        self.nav.eph.e = getbitu2(data, 166, 8, 180, 24) as f64 * P2_33;
+        self.nav.eph.cus = getbits(data, 210, 16) as f64 * P2_29;
+        let sqrt_a = getbitu2(data, 226, 8, 240, 24) as f64 * P2_19;
+        self.nav.eph.toes = getbitu(data, 270, 16) as f64 * 16.0;
+        self.nav.eph.fit = getbitu(data, 286, 1) as f64;
+        self.nav.eph.a = sqrt_a * sqrt_a;
+
+        /* ephemeris update flag */
+        if oldiode != self.nav.eph.iode {
+            self.nav.eph.update = true;
+        }
+    }
+
+    fn nav_decode_lnav_subframe3(&mut self) {
+        let data = &self.nav.data[0..];
+        let oldiode = self.nav.eph.iode;
+
+        self.nav.eph.cic = getbits(data, 60, 16) as f64 * P2_29;
+        self.nav.eph.omg0 = getbits2(data, 76, 8, 90, 24) as f64 * P2_31 * SC2RAD;
+        self.nav.eph.cis = getbits(data, 120, 16) as f64 * P2_29;
+        self.nav.eph.i0 = getbits2(data, 136, 8, 150, 24) as f64 * P2_31 * SC2RAD;
+        self.nav.eph.crc = getbits(data, 180, 16) as f64 * P2_5;
+        self.nav.eph.omg = getbits2(data, 196, 8, 210, 24) as f64 * P2_31 * SC2RAD;
+        self.nav.eph.omgd = getbits(data, 240, 24) as f64 * P2_43 * SC2RAD;
+        self.nav.eph.iode = getbitu(data, 270, 8);
+        self.nav.eph.idot = getbits(data, 278, 14) as f64 * P2_43 * SC2RAD;
+
+        /* ephemeris update flag */
+        if oldiode != self.nav.eph.iode {
+            self.nav.eph.update = true;
+        }
+    }
+
     fn nav_decode_lnav_subframe4(&mut self) {}
     fn nav_decode_lnav_subframe5(&mut self) {}
 
