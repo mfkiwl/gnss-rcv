@@ -92,3 +92,69 @@ pub fn doppler_shift(iq_vec: &mut Vec<Complex64>, doppler_hz: f64, phi: f64, fs:
         iq_vec[i] = iq_vec[i] * carrier[i];
     }
 }
+
+pub fn getbitu(buf: &[u8], pos: usize, len: usize) -> u32 {
+    assert!(len <= 32);
+    let mut bits = 0u32;
+    for i in pos..pos + len {
+        bits = (bits << 1) | ((buf[i / 8] >> (7 - i % 8)) as u32 & 1u32);
+    }
+    bits
+}
+
+pub fn pack_bits(bits: &[u8], nz: usize, dst: &mut Vec<u8>) {
+    let len = (bits.len() + nz + 7) / 8;
+    dst[0..len].fill(0);
+    for i in nz..nz + bits.len() {
+        dst[i / 8] |= bits[i - nz] << (7 - i % 8);
+    }
+}
+
+pub fn hex_str(data: &[u8], num_bits: usize) -> String {
+    let mut s = String::new();
+    for i in 0..(num_bits + 7) / 8 {
+        let n = format!("{:02x}", data[i]);
+        s.push_str(&n);
+    }
+    s
+}
+
+pub fn xor_bits(v: u32) -> u8 {
+    let xor_8b = [
+        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0,
+        0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1,
+        0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0,
+        0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0,
+        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0,
+        0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1,
+        0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0,
+        0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
+        0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
+    ];
+
+    let bytes: [u8; 4] = v.to_le_bytes();
+    xor_8b[bytes[0] as usize]
+        ^ xor_8b[bytes[1] as usize]
+        ^ xor_8b[bytes[2] as usize]
+        ^ xor_8b[bytes[3] as usize]
+}
+
+pub fn bmatch_r(bits0: &[u8], bits1: &[u8]) -> bool {
+    assert_eq!(bits0.len(), bits1.len());
+    for i in 0..bits0.len() {
+        if bits0[i] == bits1[i] {
+            return false;
+        }
+    }
+    true
+}
+
+pub fn bmatch_n(bits0: &[u8], bits1: &[u8]) -> bool {
+    assert_eq!(bits0.len(), bits1.len());
+    for i in 0..bits0.len() {
+        if bits0[i] != bits1[i] {
+            return false;
+        }
+    }
+    true
+}

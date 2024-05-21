@@ -10,6 +10,7 @@ use crate::constants::CN0_THRESHOLD_LOST;
 use crate::constants::L1CA_HZ;
 use crate::constants::PRN_CODE_LEN;
 use crate::gold_code::GoldCode;
+use crate::navigation::Navigation;
 use crate::plots::plot_iq_scatter;
 use crate::plots::plot_time_graph;
 use crate::types::GnssCorrelationParam;
@@ -20,6 +21,7 @@ const SP_CORR: f64 = 0.5;
 const T_IDLE: f64 = 1.0;
 const T_ACQ: f64 = 0.01; // 10msec acquisition time
 const T_FPULLIN: f64 = 1.0;
+const T_NPULLIN: f64 = 1.5; // navigation data pullin time (s)
 const T_DLL: f64 = 0.01; // non-coherent integration time for DLL
 const T_CN0: f64 = 1.0; // averaging time for C/N0
 const B_FLL_WIDE: f64 = 10.0; // bandwidth of FLL wide Hz
@@ -40,7 +42,7 @@ enum TrackState {
 
 pub struct GnssSatellite {
     // constants
-    prn: usize,
+    pub prn: usize,
     fc: f64,                 // carrier frequency
     fs: f64,                 // sampling frequency
     fi: f64,                 // intermediate frequency
@@ -50,7 +52,7 @@ pub struct GnssSatellite {
     prn_code_fft: Vec<Complex64>,
     fft_planner: FftPlanner<f64>,
     state: TrackState,
-    ts_sec: f64, // current time
+    pub ts_sec: f64, // current time
 
     // idle
     num_idle_samples: usize,
@@ -70,15 +72,17 @@ pub struct GnssSatellite {
     sum_corr_l: f64,
     sum_corr_p: f64,
     sum_corr_n: f64,
-    num_tracking_samples: usize,
+    pub num_tracking_samples: usize,
 
     // plots
     last_log_ts: f64,
     last_plot_ts: f64,
-    code_phase_offset_rolling_buffer: Vec<f64>,
-    phi_error_rolling_buffer: Vec<f64>,
-    doppler_hz_rolling_buffer: Vec<f64>,
-    disc_p_rolling_buffer: Vec<Complex64>,
+    code_phase_offset_hist: Vec<f64>,
+    phi_error_hist: Vec<f64>,
+    doppler_hz_hist: Vec<f64>,
+    pub corr_p_hist: Vec<Complex64>,
+
+    pub nav: Navigation,
 }
 
 impl Drop for GnssSatellite {
@@ -132,13 +136,15 @@ impl GnssSatellite {
             sum_corr_p: 0.0,
             sum_corr_n: 0.0,
 
-            code_phase_offset_rolling_buffer: vec![],
-            phi_error_rolling_buffer: vec![],
-            doppler_hz_rolling_buffer: vec![],
-            disc_p_rolling_buffer: vec![],
+            code_phase_offset_hist: vec![],
+            phi_error_hist: vec![],
+            doppler_hz_hist: vec![],
+            corr_p_hist: vec![],
             last_plot_ts: 0.0,
             last_log_ts: 0.0,
             state: TrackState::TRACKING,
+
+            nav: Navigation::new(),
         }
     }
 
@@ -185,6 +191,7 @@ impl GnssSatellite {
         self.sum_corr_l = 0.0;
         self.sum_corr_n = 0.0;
         self.num_tracking_samples = 0;
+        self.nav.init();
     }
 
     fn tracking_start(
@@ -249,7 +256,7 @@ impl GnssSatellite {
         plot_time_graph(
             self.prn,
             "code-phase-offset",
-            self.code_phase_offset_rolling_buffer.as_slice(),
+            self.code_phase_offset_hist.as_slice(),
             50.0,
             &BLUE,
         );
@@ -259,7 +266,7 @@ impl GnssSatellite {
         plot_time_graph(
             self.prn,
             "phi-error",
-            self.phi_error_rolling_buffer.as_slice(),
+            self.phi_error_hist.as_slice(),
             0.5,
             &BLACK,
         );
@@ -269,16 +276,16 @@ impl GnssSatellite {
         plot_time_graph(
             self.prn,
             "doppler-hz",
-            &self.doppler_hz_rolling_buffer.as_slice(),
+            &self.doppler_hz_hist.as_slice(),
             10.0,
             &BLACK,
         );
     }
 
     fn plot_iq_scatter(&self) {
-        let len = self.disc_p_rolling_buffer.len();
+        let len = self.corr_p_hist.len();
         let n = usize::min(len, 2000);
-        plot_iq_scatter(self.prn, &&self.disc_p_rolling_buffer[len - n..len]);
+        plot_iq_scatter(self.prn, &&self.corr_p_hist[len - n..len]);
     }
 
     fn acquisition_process(&mut self, iq_vec2: &Vec<Complex64>) {
@@ -344,7 +351,7 @@ impl GnssSatellite {
         iq_vec2: &Vec<Complex64>,
     ) -> (Complex64, Complex64, Complex64, Complex64) {
         let n = self.samples_per_code as i32;
-        let code_idx = *self.code_phase_offset_rolling_buffer.last().unwrap() as i32;
+        let code_idx = *self.code_phase_offset_hist.last().unwrap() as i32;
         assert!(-n < code_idx && code_idx < n);
 
         //       [-------][-------][---------]
@@ -403,9 +410,9 @@ impl GnssSatellite {
         if self.num_tracking_samples < 2 {
             return;
         }
-        let len = self.disc_p_rolling_buffer.len();
-        let c1 = self.disc_p_rolling_buffer[len - 1];
-        let c2 = self.disc_p_rolling_buffer[len - 2];
+        let len = self.corr_p_hist.len();
+        let c1 = self.corr_p_hist[len - 1];
+        let c2 = self.corr_p_hist[len - 2];
         let dot = c1.re * c2.re + c1.im * c2.im;
         let cross = c1.re * c2.im - c1.im * c2.re;
 
@@ -432,7 +439,7 @@ impl GnssSatellite {
         self.doppler_hz +=
             1.4 * w * (err_phase - self.err_phase) + w * w * err_phase * self.code_sec;
         self.err_phase = err_phase;
-        self.phi_error_rolling_buffer.push(err_phase * 2.0 * PI);
+        self.phi_error_hist.push(err_phase * 2.0 * PI);
     }
 
     fn run_dll(&mut self, c_e: Complex64, c_l: Complex64) {
@@ -477,13 +484,14 @@ impl GnssSatellite {
         }
 
         self.phi = self.fi * tau + self.adr + fc * code_idx as f64 / self.fs;
-        self.code_phase_offset_rolling_buffer.push(code_idx as f64);
+
+        self.code_phase_offset_hist.push(code_idx as f64);
 
         code_idx
     }
 
     fn log_periodically(&mut self) {
-        let code_idx = self.code_phase_offset_rolling_buffer.last().unwrap();
+        let code_idx = self.code_phase_offset_hist.last().unwrap();
         if self.ts_sec - self.last_log_ts > 3.0 {
             log::warn!(
                 "sat-{:2}: {} cn0={:.1} dopp={:5.0} code_idx={:4.0} phi={:5.2} ts_sec={:.3}",
@@ -499,32 +507,33 @@ impl GnssSatellite {
         }
     }
 
-    fn trim_rolling_buffer(&mut self) {
-        if self.doppler_hz_rolling_buffer.len() > HISTORY_NUM {
+    fn trim_rolling_buffers(&mut self) {
+        if self.doppler_hz_hist.len() > HISTORY_NUM {
             let _ = self
-                .doppler_hz_rolling_buffer
-                .drain(0..self.doppler_hz_rolling_buffer.len() - HISTORY_NUM);
+                .doppler_hz_hist
+                .drain(0..self.doppler_hz_hist.len() - HISTORY_NUM);
         }
-        if self.phi_error_rolling_buffer.len() > HISTORY_NUM {
+        if self.phi_error_hist.len() > HISTORY_NUM {
             let _ = self
-                .phi_error_rolling_buffer
-                .drain(0..self.phi_error_rolling_buffer.len() - HISTORY_NUM);
+                .phi_error_hist
+                .drain(0..self.phi_error_hist.len() - HISTORY_NUM);
         }
-        if self.disc_p_rolling_buffer.len() > HISTORY_NUM {
+        if self.corr_p_hist.len() > HISTORY_NUM {
             let _ = self
-                .disc_p_rolling_buffer
-                .drain(0..self.disc_p_rolling_buffer.len() - HISTORY_NUM);
+                .corr_p_hist
+                .drain(0..self.corr_p_hist.len() - HISTORY_NUM);
         }
-        if self.code_phase_offset_rolling_buffer.len() > HISTORY_NUM {
+        if self.code_phase_offset_hist.len() > HISTORY_NUM {
             let _ = self
-                .code_phase_offset_rolling_buffer
-                .drain(0..self.code_phase_offset_rolling_buffer.len() - HISTORY_NUM);
+                .code_phase_offset_hist
+                .drain(0..self.code_phase_offset_hist.len() - HISTORY_NUM);
         }
     }
+
     fn tracking_process(&mut self, iq_vec2: &Vec<Complex64>) {
         self.get_code_and_carrier_phase();
         let (c_p, c_e, c_l, c_n) = self.compute_correlation(&iq_vec2);
-        self.disc_p_rolling_buffer.push(c_p);
+        self.corr_p_hist.push(c_p);
 
         if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN {
             self.run_fll();
@@ -535,8 +544,12 @@ impl GnssSatellite {
         self.run_dll(c_e, c_l);
         self.update_cn0(c_p, c_n);
 
-        self.doppler_hz_rolling_buffer.push(self.doppler_hz);
-        self.trim_rolling_buffer();
+        if self.num_tracking_samples as f64 * self.code_sec >= T_NPULLIN {
+            self.nav_decode();
+        }
+
+        self.doppler_hz_hist.push(self.doppler_hz);
+        self.trim_rolling_buffers();
         self.update_all_plots(false);
         self.num_tracking_samples += 1;
         self.log_periodically();
