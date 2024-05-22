@@ -43,7 +43,6 @@ enum TrackState {
 }
 
 pub struct Channel {
-    // constants
     pub sv: SV,
     fc: f64,                 // carrier frequency
     fs: f64,                 // sampling frequency

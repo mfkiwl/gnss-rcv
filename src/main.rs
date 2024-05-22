@@ -13,7 +13,7 @@ use structopt::StructOpt;
 
 use gnss_rcv::code::Code;
 use gnss_rcv::constants::NUM_GPS_SATS;
-use gnss_rcv::receiver::GnssReceiver;
+use gnss_rcv::receiver::Receiver;
 use gnss_rcv::recording::IQFileType;
 use gnss_rcv::recording::IQRecording;
 
@@ -113,7 +113,7 @@ fn main() -> std::io::Result<()> {
     plot_remove_old_graph();
     let gold_code = Code::new();
     let recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
-    let mut receiver = GnssReceiver::new(gold_code, recording, opt.fs, opt.fi, opt.off_msec);
+    let mut receiver = Receiver::new(gold_code, recording, opt.fs, opt.fi, opt.off_msec);
 
     receiver.init(sat_vec);
     let mut n = 0;

@@ -10,7 +10,7 @@ use crate::recording::IQRecording;
 use crate::types::IQSample;
 use crate::util::get_num_samples_per_msec;
 
-pub struct GnssReceiver {
+pub struct Receiver {
     gold_code: Code,
     pub recording: IQRecording,
     fs: f64,
@@ -21,11 +21,11 @@ pub struct GnssReceiver {
     satellites: HashMap<u8, Channel>,
 }
 
-impl Drop for GnssReceiver {
+impl Drop for Receiver {
     fn drop(&mut self) {}
 }
 
-impl GnssReceiver {
+impl Receiver {
     pub fn new(gold_code: Code, recording: IQRecording, fs: f64, fi: f64, off_msec: usize) -> Self {
         Self {
             gold_code,
