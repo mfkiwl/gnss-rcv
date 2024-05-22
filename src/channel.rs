@@ -40,7 +40,7 @@ enum TrackState {
     IDLE,
 }
 
-pub struct GnssSatellite {
+pub struct Channel {
     // constants
     pub prn: usize,
     fc: f64,                 // carrier frequency
@@ -85,13 +85,13 @@ pub struct GnssSatellite {
     pub nav: Navigation,
 }
 
-impl Drop for GnssSatellite {
+impl Drop for Channel {
     fn drop(&mut self) {
         self.update_all_plots(true);
     }
 }
 
-impl GnssSatellite {
+impl Channel {
     pub fn new(prn: usize, gold_code: &mut GoldCode, fs: f64, fi: f64) -> Self {
         log::info!("{}", format!("sat {prn:2}: new: ",).green());
 

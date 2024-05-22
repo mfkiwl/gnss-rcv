@@ -2,7 +2,7 @@ use rayon::prelude::*;
 use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
 
-use crate::channel::GnssSatellite;
+use crate::channel::Channel;
 use crate::constants::ACQUISITION_WINDOW_MSEC;
 use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
@@ -20,7 +20,7 @@ pub struct GnssReceiver {
     off_samples: usize,
     cached_iq_vec: Vec<Complex64>,
     cached_ts_sec_tail: f64,
-    satellites: HashMap<usize, GnssSatellite>,
+    satellites: HashMap<usize, Channel>,
 }
 
 impl Drop for GnssReceiver {
@@ -43,16 +43,14 @@ impl GnssReceiver {
             off_samples: off_msec * get_num_samples_per_msec(),
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_ts_sec_tail: 0.0,
-            satellites: HashMap::<usize, GnssSatellite>::new(),
+            satellites: HashMap::<usize, Channel>::new(),
         }
     }
 
     pub fn init(&mut self, sat_vec: Vec<usize>) {
         for sv in sat_vec {
-            self.satellites.insert(
-                sv,
-                GnssSatellite::new(sv, &mut self.gold_code, self.fs, self.fi),
-            );
+            self.satellites
+                .insert(sv, Channel::new(sv, &mut self.gold_code, self.fs, self.fi));
         }
     }
     /*

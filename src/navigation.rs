@@ -1,5 +1,5 @@
 use crate::{
-    channel::GnssSatellite,
+    channel::Channel,
     util::{
         bmatch_n, bmatch_r, getbits, getbits2, getbitu, getbitu2, hex_str, pack_bits, xor_bits,
     },
@@ -122,7 +122,7 @@ impl Navigation {
     }
 }
 
-impl GnssSatellite {
+impl Channel {
     fn nav_mean_ip(&self, n: usize) -> f64 {
         let mut p = 0.0;
         let len = self.corr_p_hist.len();
