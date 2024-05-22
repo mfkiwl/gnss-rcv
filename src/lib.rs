@@ -1,6 +1,6 @@
 pub mod channel;
+pub mod code;
 pub mod constants;
-pub mod gold_code;
 pub mod navigation;
 pub mod plots;
 pub mod receiver;

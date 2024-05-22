@@ -1,7 +1,7 @@
 use chrono::Local;
 use colored::Colorize;
 use coredump::register_panic_handler;
-use gnss_rs::plots::plot_remove_old_graph;
+use gnss_rcv::plots::plot_remove_old_graph;
 use log::LevelFilter;
 use std::fs::File;
 use std::io::Write;
@@ -11,11 +11,11 @@ use std::sync::Arc;
 use std::time::Instant;
 use structopt::StructOpt;
 
-use gnss_rs::constants::NUM_GPS_SATS;
-use gnss_rs::gold_code::GoldCode;
-use gnss_rs::receiver::GnssReceiver;
-use gnss_rs::recording::IQFileType;
-use gnss_rs::recording::IQRecording;
+use gnss_rcv::code::Code;
+use gnss_rcv::constants::NUM_GPS_SATS;
+use gnss_rcv::receiver::GnssReceiver;
+use gnss_rcv::recording::IQFileType;
+use gnss_rcv::recording::IQRecording;
 
 #[derive(StructOpt)]
 #[structopt(name = "gnss-rs", about = "Gnss tracker")]
@@ -83,7 +83,7 @@ fn main() -> std::io::Result<()> {
     let exit_req = Arc::new(AtomicBool::new(false));
 
     if opt.print_gold_code {
-        GoldCode::print_gold_codes();
+        Code::print_gold_codes();
         return Ok(());
     }
 
@@ -111,7 +111,7 @@ fn main() -> std::io::Result<()> {
     }
 
     plot_remove_old_graph();
-    let gold_code = GoldCode::new();
+    let gold_code = Code::new();
     let recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
     let mut receiver = GnssReceiver::new(gold_code, recording, opt.fs, opt.fi, opt.off_msec);
 

@@ -5,11 +5,11 @@ use rustfft::FftPlanner;
 
 const PI: f64 = std::f64::consts::PI;
 
+use crate::code::Code;
 use crate::constants::CN0_THRESHOLD_LOCKED;
 use crate::constants::CN0_THRESHOLD_LOST;
 use crate::constants::L1CA_HZ;
 use crate::constants::PRN_CODE_LEN;
-use crate::gold_code::GoldCode;
 use crate::navigation::Navigation;
 use crate::plots::plot_iq_scatter;
 use crate::plots::plot_time_graph;
@@ -92,7 +92,7 @@ impl Drop for Channel {
 }
 
 impl Channel {
-    pub fn new(prn: usize, gold_code: &mut GoldCode, fs: f64, fi: f64) -> Self {
+    pub fn new(prn: usize, gold_code: &mut Code, fs: f64, fi: f64) -> Self {
         log::info!("{}", format!("sat {prn:2}: new: ",).green());
 
         Self {

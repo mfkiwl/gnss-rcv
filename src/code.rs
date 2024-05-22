@@ -40,12 +40,12 @@ const PRN_TO_G2_TAP: [(usize, usize); NUM_GPS_SATS] = [
     (4, 9),
 ];
 
-pub struct GoldCode {
+pub struct Code {
     upscaled_codes_complex: Vec<Vec<Complex64>>,
     prn_code_fft_map: HashMap<usize, Vec<Complex64>>,
 }
 
-impl GoldCode {
+impl Code {
     pub fn new() -> Self {
         let mut s = Self {
             upscaled_codes_complex: vec![vec![]; NUM_GPS_SATS],

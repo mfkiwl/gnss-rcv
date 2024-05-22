@@ -3,14 +3,14 @@ use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
 
 use crate::channel::Channel;
+use crate::code::Code;
 use crate::constants::ACQUISITION_WINDOW_MSEC;
-use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
 use crate::types::IQSample;
 use crate::util::get_num_samples_per_msec;
 
 pub struct GnssReceiver {
-    gold_code: GoldCode,
+    gold_code: Code,
     pub recording: IQRecording,
     fs: f64,
     fi: f64,
@@ -25,13 +25,7 @@ impl Drop for GnssReceiver {
 }
 
 impl GnssReceiver {
-    pub fn new(
-        gold_code: GoldCode,
-        recording: IQRecording,
-        fs: f64,
-        fi: f64,
-        off_msec: usize,
-    ) -> Self {
+    pub fn new(gold_code: Code, recording: IQRecording, fs: f64, fi: f64, off_msec: usize) -> Self {
         Self {
             gold_code,
             recording,
