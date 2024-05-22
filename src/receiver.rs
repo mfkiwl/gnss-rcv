@@ -6,11 +6,8 @@ use crate::channel::Channel;
 use crate::constants::ACQUISITION_WINDOW_MSEC;
 use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
-
 use crate::types::IQSample;
 use crate::util::get_num_samples_per_msec;
-
-//const ACQUISITION_PERIOD_SEC: f64 = 3.0; // run acquisition every 3sec
 
 pub struct GnssReceiver {
     gold_code: GoldCode,
@@ -53,65 +50,6 @@ impl GnssReceiver {
                 .insert(sv, Channel::new(sv, &mut self.gold_code, self.fs, self.fi));
         }
     }
-    /*
-    fn try_periodic_acquisition(&mut self) {
-        if self.cached_ts_sec_tail < self.last_acq_ts_sec + ACQUISITION_PERIOD_SEC {
-            return;
-        }
-
-        let ts = Instant::now();
-        let cached_vec_len = self.cached_iq_vec.len();
-        let num_samples = ACQUISITION_WINDOW_MSEC * get_num_samples_per_msec();
-
-        log::warn!(
-            "--- try_acq: ts: {:.3} sec",
-            format!("{}", self.cached_ts_sec_tail).green(),
-        );
-
-        let samples_vec = self.cached_iq_vec[cached_vec_len - num_samples..].to_vec();
-        let samples_ts_sec = self.cached_ts_sec_tail - ACQUISITION_WINDOW_MSEC as f64 / 1000.0;
-        let mut new_sats = HashMap::<usize, GnssCorrelationParam>::new();
-
-        let sample = IQSample {
-            iq_vec: samples_vec,
-            ts_sec: samples_ts_sec,
-        };
-
-        // Perform acquisition on each possible satellite in parallel
-        let new_sats_vec_res: Vec<_> = self
-            .sat_vec
-            .par_iter()
-            .map(|&id| {
-                let mut fft_planner: FftPlanner<f64> = FftPlanner::new();
-                try_acquisition_one_sat(&self.gold_code, &mut fft_planner, self.fs, id, &sample)
-            })
-            .collect();
-
-        // So far we've only collected an array of options, let's insert them
-        // in the map for easy look-up.
-        for (i, opt) in new_sats_vec_res.iter().enumerate() {
-            let id = self.sat_vec[i];
-            if let Some(param) = opt {
-                new_sats.insert(id, *param);
-            }
-        }
-
-        for (id, param) in &new_sats {
-            match self.satellites.get_mut(id) {
-                Some(sat) => sat.update_param(param),
-                None => {
-                    self.satellites.insert(
-                        *id,
-                        GnssSatellite::new(*id, &mut self.gold_code, self.fs, self.fi, *param),
-                    );
-                }
-            }
-        }
-
-        log::debug!("acquisition: {} msec", ts.elapsed().as_millis());
-        self.last_acq_ts_sec = self.cached_ts_sec_tail;
-    }
-    */
 
     fn fetch_samples_msec(&mut self) -> Result<IQSample, Box<dyn std::error::Error>> {
         let num_samples = if self.cached_iq_vec.len() == 0 {

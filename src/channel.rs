@@ -13,7 +13,7 @@ use crate::gold_code::GoldCode;
 use crate::navigation::Navigation;
 use crate::plots::plot_iq_scatter;
 use crate::plots::plot_time_graph;
-use crate::types::GnssCorrelationParam;
+
 use crate::util::calc_correlation;
 use crate::util::doppler_shift;
 
@@ -218,17 +218,6 @@ impl Channel {
         let corr_vec: Vec<_> = corr.iter().map(|v| v.norm_sqr()).collect();
 
         corr_vec
-    }
-
-    pub fn update_param(&mut self, param: &GnssCorrelationParam) {
-        log::warn!(
-            "sat {:2}: ---- cn0={:.1} dopp={:5} code_off={:5} phi={:5.2}",
-            self.prn,
-            param.cn0,
-            param.doppler_hz,
-            param.code_phase_offset,
-            param.carrier_phase_shift,
-        );
     }
 
     fn update_all_plots(&mut self, force: bool) {
