@@ -2,6 +2,7 @@ use gnss_rs::constellation::Constellation;
 use rayon::prelude::*;
 use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
+use std::time::Instant;
 
 use crate::channel::Channel;
 use crate::code::Code;
@@ -18,7 +19,8 @@ pub struct Receiver {
     off_samples: usize,
     cached_iq_vec: Vec<Complex64>,
     cached_ts_sec_tail: f64,
-    satellites: HashMap<u8, Channel>,
+    channels: HashMap<u8, Channel>,
+    last_fix_sec: Instant,
 }
 
 impl Drop for Receiver {
@@ -35,13 +37,14 @@ impl Receiver {
             off_samples: off_msec * get_num_samples_per_msec(),
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_ts_sec_tail: 0.0,
-            satellites: HashMap::<u8, Channel>::new(),
+            channels: HashMap::<u8, Channel>::new(),
+            last_fix_sec: Instant::now(),
         }
     }
 
     pub fn init(&mut self, sat_vec: Vec<u8>) {
         for prn in sat_vec {
-            self.satellites.insert(
+            self.channels.insert(
                 prn,
                 Channel::new(
                     Constellation::GPS,
@@ -83,12 +86,23 @@ impl Receiver {
         })
     }
 
+    fn compute_fix(&mut self) {
+        if self.last_fix_sec.elapsed().as_secs_f32() < 2.0 {
+            return;
+        }
+        log::warn!("attempting fix");
+
+        self.last_fix_sec = Instant::now();
+    }
+
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let samples = self.fetch_samples_msec()?;
 
-        self.satellites
+        self.channels
             .par_iter_mut()
             .for_each(|(_id, sat)| sat.process_samples(&samples.iq_vec, samples.ts_sec));
+
+        self.compute_fix();
 
         Ok(())
     }

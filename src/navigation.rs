@@ -125,10 +125,10 @@ impl Navigation {
 impl Channel {
     fn nav_mean_ip(&self, n: usize) -> f64 {
         let mut p = 0.0;
-        let len = self.corr_p_hist.len();
+        let len = self.hist.corr_p_hist.len();
         for i in 0..n {
             // weird math
-            let c = self.corr_p_hist[len - i - 1];
+            let c = self.hist.corr_p_hist[len - i - 1];
             p += (c.re / c.norm() - p) / (1.0 + i as f64);
         }
         p
@@ -166,12 +166,12 @@ impl Channel {
     fn nav_sync_symbol(&mut self, num: usize) -> bool {
         if self.nav.ssync == 0 {
             let n = if num <= 2 { 1 } else { 2 };
-            let len = self.corr_p_hist.len();
+            let len = self.hist.corr_p_hist.len();
             let mut v = vec![];
             let mut p = 0.0;
             for i in 0..2 * n {
                 let code = if i < n { -1.0 } else { 1.0 };
-                let corr = self.corr_p_hist[len - 2 * n + i];
+                let corr = self.hist.corr_p_hist[len - 2 * n + i];
                 p += corr.re * code / corr.norm(); // costly!
                 v.push(corr.re / corr.norm());
             }

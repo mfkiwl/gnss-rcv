@@ -15,7 +15,6 @@ use crate::constants::PRN_CODE_LEN;
 use crate::navigation::Navigation;
 use crate::plots::plot_iq_scatter;
 use crate::plots::plot_time_graph;
-
 use crate::util::calc_correlation;
 use crate::util::doppler_shift;
 
@@ -42,6 +41,31 @@ enum TrackState {
     IDLE,
 }
 
+#[derive(Default)]
+struct Tracking {
+    sum_p: Vec<Vec<f64>>,
+    doppler_hz: f64,
+    code_off_sec: f64,
+    cn0: f64,
+    adr: f64,
+    phi: f64,
+    err_phase: f64,
+    sum_corr_e: f64,
+    sum_corr_l: f64,
+    sum_corr_p: f64,
+    sum_corr_n: f64,
+}
+
+#[derive(Default)]
+pub struct History {
+    pub last_log_ts: f64,
+    pub last_plot_ts: f64,
+    pub code_phase_offset_hist: Vec<f64>,
+    pub phi_error_hist: Vec<f64>,
+    pub doppler_hz_hist: Vec<f64>,
+    pub corr_p_hist: Vec<Complex64>,
+}
+
 pub struct Channel {
     pub sv: SV,
     fc: f64,                 // carrier frequency
@@ -59,27 +83,9 @@ pub struct Channel {
     pub num_tracking_samples: usize,
     num_acq_samples: usize,
 
-    sum_p: Vec<Vec<f64>>,
-    doppler_hz: f64,
-    code_off_sec: f64,
-    cn0: f64,
-    adr: f64,
-    phi: f64,
-    err_phase: f64,
-    sum_corr_e: f64,
-    sum_corr_l: f64,
-    sum_corr_p: f64,
-    sum_corr_n: f64,
-
-    // plots
-    last_log_ts: f64,
-    last_plot_ts: f64,
-    code_phase_offset_hist: Vec<f64>,
-    phi_error_hist: Vec<f64>,
-    doppler_hz_hist: Vec<f64>,
-    pub corr_p_hist: Vec<Complex64>,
-
+    pub hist: History,
     pub nav: Navigation,
+    trk: Tracking,
 }
 
 impl Drop for Channel {
@@ -106,27 +112,15 @@ impl Channel {
             num_acq_samples: 0,
             num_idle_samples: 0,
             num_tracking_samples: 0,
-            cn0: 0.0,
-            doppler_hz: 0.0,
-            phi: 0.0,
-            code_off_sec: 0.0,
-            adr: 0.0,
-            err_phase: 0.0,
-            sum_p: vec![vec![0.0; 2046]; DOPPLER_SPREAD_BINS],
-            sum_corr_e: 0.0,
-            sum_corr_l: 0.0,
-            sum_corr_p: 0.0,
-            sum_corr_n: 0.0,
 
-            code_phase_offset_hist: vec![],
-            phi_error_hist: vec![],
-            doppler_hz_hist: vec![],
-            corr_p_hist: vec![],
-            last_plot_ts: 0.0,
-            last_log_ts: 0.0,
             state: TrackState::ACQUISITION,
 
             nav: Navigation::new(),
+            hist: History::default(),
+            trk: Tracking {
+                sum_p: vec![vec![0.0; 2046]; DOPPLER_SPREAD_BINS],
+                ..Default::default()
+            },
         }
     }
 
@@ -136,14 +130,14 @@ impl Channel {
                 "{}: {} cn0={:.1} ts_sec={:.3}",
                 self.sv,
                 format!("LOST").red(),
-                self.cn0,
+                self.trk.cn0,
                 self.ts_sec,
             );
         } else {
             log::info!(
                 "{}: IDLE cn0={:.1} ts_sec={:.3}",
                 self.sv,
-                self.cn0,
+                self.trk.cn0,
                 self.ts_sec,
             );
         }
@@ -159,7 +153,7 @@ impl Channel {
     }
 
     fn acquisition_init(&mut self) {
-        self.sum_p = vec![vec![0.0; self.samples_per_code]; DOPPLER_SPREAD_BINS];
+        self.trk.sum_p = vec![vec![0.0; self.samples_per_code]; DOPPLER_SPREAD_BINS];
         self.num_acq_samples = 0;
     }
     fn acquisition_start(&mut self) {
@@ -168,15 +162,15 @@ impl Channel {
     }
 
     fn tracking_init(&mut self) {
-        self.doppler_hz = 0.0;
-        self.cn0 = 0.0;
-        self.adr = 0.0;
-        self.code_off_sec = 0.0;
-        self.err_phase = 0.0;
-        self.sum_corr_p = 0.0;
-        self.sum_corr_e = 0.0;
-        self.sum_corr_l = 0.0;
-        self.sum_corr_n = 0.0;
+        self.trk.doppler_hz = 0.0;
+        self.trk.cn0 = 0.0;
+        self.trk.adr = 0.0;
+        self.trk.code_off_sec = 0.0;
+        self.trk.err_phase = 0.0;
+        self.trk.sum_corr_p = 0.0;
+        self.trk.sum_corr_e = 0.0;
+        self.trk.sum_corr_l = 0.0;
+        self.trk.sum_corr_n = 0.0;
         self.num_tracking_samples = 0;
         self.nav.init();
     }
@@ -197,9 +191,9 @@ impl Channel {
         self.tracking_init();
         self.state = TrackState::TRACKING;
 
-        self.code_off_sec = code_off_sec;
-        self.doppler_hz = doppler_hz;
-        self.cn0 = cn0;
+        self.trk.code_off_sec = code_off_sec;
+        self.trk.doppler_hz = doppler_hz;
+        self.trk.cn0 = cn0;
     }
 
     fn integrate_correlation(&mut self, iq_vec_slice: &[Complex64], doppler_hz: f64) -> Vec<f64> {
@@ -216,7 +210,7 @@ impl Channel {
     }
 
     fn update_all_plots(&mut self, force: bool) {
-        if !force && self.ts_sec - self.last_plot_ts <= 2.0 {
+        if !force && self.ts_sec - self.hist.last_plot_ts <= 2.0 {
             return;
         }
 
@@ -225,14 +219,14 @@ impl Channel {
         self.plot_phi_error();
         self.plot_doppler_hz();
 
-        self.last_plot_ts = self.ts_sec;
+        self.hist.last_plot_ts = self.ts_sec;
     }
 
     fn plot_code_phase_offset(&self) {
         plot_time_graph(
             self.sv,
             "code-phase-offset",
-            self.code_phase_offset_hist.as_slice(),
+            self.hist.code_phase_offset_hist.as_slice(),
             50.0,
             &BLUE,
         );
@@ -242,7 +236,7 @@ impl Channel {
         plot_time_graph(
             self.sv,
             "phi-error",
-            self.phi_error_hist.as_slice(),
+            self.hist.phi_error_hist.as_slice(),
             0.5,
             &BLACK,
         );
@@ -252,16 +246,16 @@ impl Channel {
         plot_time_graph(
             self.sv,
             "doppler-hz",
-            &self.doppler_hz_hist.as_slice(),
+            &self.hist.doppler_hz_hist.as_slice(),
             10.0,
             &BLACK,
         );
     }
 
     fn plot_iq_scatter(&self) {
-        let len = self.corr_p_hist.len();
+        let len = self.hist.corr_p_hist.len();
         let n = usize::min(len, 2000);
-        plot_iq_scatter(self.sv, &&self.corr_p_hist[len - n..len]);
+        plot_iq_scatter(self.sv, &&self.hist.corr_p_hist[len - n..len]);
     }
 
     fn acquisition_process(&mut self, iq_vec2: &Vec<Complex64>) {
@@ -275,7 +269,7 @@ impl Channel {
             assert_eq!(c_non_coherent.len(), self.samples_per_code);
 
             for j in 0..self.samples_per_code {
-                self.sum_p[i][j] += c_non_coherent[j];
+                self.trk.sum_p[i][j] += c_non_coherent[j];
             }
         }
 
@@ -293,9 +287,9 @@ impl Channel {
                 let mut v_peak = 0.0;
                 let mut j_peak = 0;
                 for j in 0..self.samples_per_code {
-                    p_sum += self.sum_p[i][j];
-                    if self.sum_p[i][j] > v_peak {
-                        v_peak = self.sum_p[i][j];
+                    p_sum += self.trk.sum_p[i][j];
+                    if self.trk.sum_p[i][j] > v_peak {
+                        v_peak = self.trk.sum_p[i][j];
                         j_peak = j;
                     }
                 }
@@ -310,7 +304,7 @@ impl Channel {
 
             let doppler_hz = -DOPPLER_SPREAD_HZ + idx as f64 * step_hz;
             let code_off_sec = idx_peak as f64 / self.samples_per_code as f64 * self.code_sec;
-            let p_avg = p_total / self.sum_p[idx].len() as f64 / DOPPLER_SPREAD_BINS as f64;
+            let p_avg = p_total / self.trk.sum_p[idx].len() as f64 / DOPPLER_SPREAD_BINS as f64;
             let cn0 = 10.0 * ((p_peak - p_avg) / p_avg / self.code_sec).log10();
 
             if cn0 >= CN0_THRESHOLD_LOCKED {
@@ -327,7 +321,7 @@ impl Channel {
         iq_vec2: &Vec<Complex64>,
     ) -> (Complex64, Complex64, Complex64, Complex64) {
         let n = self.samples_per_code as i32;
-        let code_idx = *self.code_phase_offset_hist.last().unwrap() as i32;
+        let code_idx = *self.hist.code_phase_offset_hist.last().unwrap() as i32;
         assert!(-n < code_idx && code_idx < n);
 
         //       [-------][-------][---------]
@@ -345,7 +339,7 @@ impl Channel {
 
         let mut signal = iq_vec2[lo_u..hi_u].to_vec();
 
-        doppler_shift(&mut signal, self.doppler_hz, self.phi, self.fs);
+        doppler_shift(&mut signal, self.trk.doppler_hz, self.trk.phi, self.fs);
 
         let pos = (SP_CORR * self.code_sec * self.fs / PRN_CODE_LEN as f64) as usize;
 
@@ -386,9 +380,9 @@ impl Channel {
         if self.num_tracking_samples < 2 {
             return;
         }
-        let len = self.corr_p_hist.len();
-        let c1 = self.corr_p_hist[len - 1];
-        let c2 = self.corr_p_hist[len - 2];
+        let len = self.hist.corr_p_hist.len();
+        let c1 = self.hist.corr_p_hist[len - 1];
+        let c2 = self.hist.corr_p_hist[len - 2];
         let dot = c1.re * c2.re + c1.im * c2.im;
         let cross = c1.re * c2.im - c1.im * c2.re;
 
@@ -403,7 +397,7 @@ impl Channel {
         };
         let err_freq = (cross / dot).atan() / 2.0 / PI;
 
-        self.doppler_hz -= b / 0.25 * err_freq;
+        self.trk.doppler_hz -= b / 0.25 * err_freq;
     }
 
     fn run_pll(&mut self, c_p: Complex64) {
@@ -412,104 +406,109 @@ impl Channel {
         }
         let err_phase = (c_p.im / c_p.re).atan() / 2.0 / PI;
         let w = B_PLL / 0.53; // ~18.9
-        self.doppler_hz +=
-            1.4 * w * (err_phase - self.err_phase) + w * w * err_phase * self.code_sec;
-        self.err_phase = err_phase;
-        self.phi_error_hist.push(err_phase * 2.0 * PI);
+        self.trk.doppler_hz +=
+            1.4 * w * (err_phase - self.trk.err_phase) + w * w * err_phase * self.code_sec;
+        self.trk.err_phase = err_phase;
+        self.hist.phi_error_hist.push(err_phase * 2.0 * PI);
     }
 
     fn run_dll(&mut self, c_e: Complex64, c_l: Complex64) {
         let n = usize::max(1, (T_DLL / self.code_sec) as usize);
         assert_eq!(n, 10);
-        self.sum_corr_e += c_e.norm();
-        self.sum_corr_l += c_l.norm();
+        self.trk.sum_corr_e += c_e.norm();
+        self.trk.sum_corr_l += c_l.norm();
         if self.num_tracking_samples % n == 0 {
-            let e = self.sum_corr_e;
-            let l = self.sum_corr_l;
+            let e = self.trk.sum_corr_e;
+            let l = self.trk.sum_corr_l;
             let err_code = (e - l) / (e + l) / 2.0 * self.code_sec / PRN_CODE_LEN as f64;
-            self.code_off_sec -= B_DLL / 0.25 * err_code * self.code_sec * n as f64;
-            self.sum_corr_e = 0.0;
-            self.sum_corr_l = 0.0;
+            self.trk.code_off_sec -= B_DLL / 0.25 * err_code * self.code_sec * n as f64;
+            self.trk.sum_corr_e = 0.0;
+            self.trk.sum_corr_l = 0.0;
         }
     }
 
     fn update_cn0(&mut self, c_p: Complex64, c_n: Complex64) {
-        self.sum_corr_p += c_p.norm_sqr();
-        self.sum_corr_n += c_n.norm_sqr();
+        self.trk.sum_corr_p += c_p.norm_sqr();
+        self.trk.sum_corr_n += c_n.norm_sqr();
 
         if self.num_tracking_samples % (T_CN0 / self.code_sec) as usize == 0 {
-            if self.sum_corr_n > 0.0 {
-                let cn0 = 10.0 * (self.sum_corr_p / self.sum_corr_n / self.code_sec).log10();
-                self.cn0 += 0.5 * (cn0 - self.cn0);
+            if self.trk.sum_corr_n > 0.0 {
+                let cn0 =
+                    10.0 * (self.trk.sum_corr_p / self.trk.sum_corr_n / self.code_sec).log10();
+                self.trk.cn0 += 0.5 * (cn0 - self.trk.cn0);
             }
-            self.sum_corr_n = 0.0;
-            self.sum_corr_p = 0.0;
+            self.trk.sum_corr_n = 0.0;
+            self.trk.sum_corr_p = 0.0;
         }
     }
     fn get_code_and_carrier_phase(&mut self) -> i32 {
         let tau = self.code_sec;
-        let fc = self.fi + self.doppler_hz;
-        self.adr += self.doppler_hz * tau; // accumulated Doppler
-        self.code_off_sec -= self.doppler_hz / self.fc * tau; // carrier-aided code offset
+        let fc = self.fi + self.trk.doppler_hz;
+        self.trk.adr += self.trk.doppler_hz * tau; // accumulated Doppler
+        self.trk.code_off_sec -= self.trk.doppler_hz / self.fc * tau; // carrier-aided code offset
 
         // code offset in samples
-        let code_off = (self.code_off_sec * self.fs + 0.5) % self.samples_per_code as f64;
+        let code_off = (self.trk.code_off_sec * self.fs + 0.5) % self.samples_per_code as f64;
         let mut code_idx = code_off as i32;
         if code_idx < 0 {
             code_idx += self.samples_per_code as i32;
         }
 
-        self.phi = self.fi * tau + self.adr + fc * code_idx as f64 / self.fs;
+        self.trk.phi = self.fi * tau + self.trk.adr + fc * code_idx as f64 / self.fs;
 
-        self.code_phase_offset_hist.push(code_idx as f64);
+        self.hist.code_phase_offset_hist.push(code_idx as f64);
 
         code_idx
     }
 
     fn log_periodically(&mut self) {
-        let code_idx = self.code_phase_offset_hist.last().unwrap();
-        if self.ts_sec - self.last_log_ts > 3.0 {
+        let code_idx = self.hist.code_phase_offset_hist.last().unwrap();
+        if self.ts_sec - self.hist.last_log_ts > 3.0 {
             log::warn!(
                 "{}: {} cn0={:.1} dopp={:5.0} code_idx={:4.0} phi={:5.2} ts_sec={:.3}",
                 self.sv,
                 format!("TRCK").green(),
-                self.cn0,
-                self.doppler_hz,
+                self.trk.cn0,
+                self.trk.doppler_hz,
                 code_idx,
-                (self.phi % 1.0) * 2.0 * PI,
+                (self.trk.phi % 1.0) * 2.0 * PI,
                 self.ts_sec,
             );
-            self.last_log_ts = self.ts_sec;
+            self.hist.last_log_ts = self.ts_sec;
         }
     }
 
     fn trim_rolling_buffers(&mut self) {
-        if self.doppler_hz_hist.len() > HISTORY_NUM {
+        if self.hist.doppler_hz_hist.len() > HISTORY_NUM {
             let _ = self
+                .hist
                 .doppler_hz_hist
-                .drain(0..self.doppler_hz_hist.len() - HISTORY_NUM);
+                .drain(0..self.hist.doppler_hz_hist.len() - HISTORY_NUM);
         }
-        if self.phi_error_hist.len() > HISTORY_NUM {
+        if self.hist.phi_error_hist.len() > HISTORY_NUM {
             let _ = self
+                .hist
                 .phi_error_hist
-                .drain(0..self.phi_error_hist.len() - HISTORY_NUM);
+                .drain(0..self.hist.phi_error_hist.len() - HISTORY_NUM);
         }
-        if self.corr_p_hist.len() > HISTORY_NUM {
+        if self.hist.corr_p_hist.len() > HISTORY_NUM {
             let _ = self
+                .hist
                 .corr_p_hist
-                .drain(0..self.corr_p_hist.len() - HISTORY_NUM);
+                .drain(0..self.hist.corr_p_hist.len() - HISTORY_NUM);
         }
-        if self.code_phase_offset_hist.len() > HISTORY_NUM {
+        if self.hist.code_phase_offset_hist.len() > HISTORY_NUM {
             let _ = self
+                .hist
                 .code_phase_offset_hist
-                .drain(0..self.code_phase_offset_hist.len() - HISTORY_NUM);
+                .drain(0..self.hist.code_phase_offset_hist.len() - HISTORY_NUM);
         }
     }
 
     fn tracking_process(&mut self, iq_vec2: &Vec<Complex64>) {
         self.get_code_and_carrier_phase();
         let (c_p, c_e, c_l, c_n) = self.compute_correlation(&iq_vec2);
-        self.corr_p_hist.push(c_p);
+        self.hist.corr_p_hist.push(c_p);
 
         if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN {
             self.run_fll();
@@ -524,13 +523,13 @@ impl Channel {
             self.nav_decode();
         }
 
-        self.doppler_hz_hist.push(self.doppler_hz);
+        self.hist.doppler_hz_hist.push(self.trk.doppler_hz);
         self.trim_rolling_buffers();
         self.update_all_plots(false);
         self.num_tracking_samples += 1;
         self.log_periodically();
 
-        if self.cn0 < CN0_THRESHOLD_LOST {
+        if self.trk.cn0 < CN0_THRESHOLD_LOST {
             self.idle_start();
         }
     }
@@ -542,9 +541,9 @@ impl Channel {
             "{}: processing: ts_sec={:.4}: cn0={:.1} dopp={:.0} code_off_sec={:.6}",
             self.sv,
             self.ts_sec,
-            self.cn0,
-            self.doppler_hz,
-            self.code_off_sec,
+            self.trk.cn0,
+            self.trk.doppler_hz,
+            self.trk.code_off_sec,
         );
 
         match self.state {
