@@ -1,4 +1,3 @@
-pub mod acquisition;
 pub mod constants;
 pub mod gold_code;
 pub mod navigation;
