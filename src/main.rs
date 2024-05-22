@@ -99,13 +99,13 @@ fn main() -> std::io::Result<()> {
         opt.num_msec,
     );
 
-    let mut sat_vec: Vec<usize> = vec![];
+    let mut sat_vec: Vec<u8> = vec![];
     if !opt.sats.is_empty() {
         for s in opt.sats.split(',') {
-            sat_vec.push(usize::from_str_radix(s, 10).unwrap());
+            sat_vec.push(u8::from_str_radix(s, 10).unwrap());
         }
     } else {
-        for id in 0..NUM_GPS_SATS {
+        for id in 0..NUM_GPS_SATS as u8 {
             sat_vec.push(id + 1);
         }
     }

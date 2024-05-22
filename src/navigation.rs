@@ -150,13 +150,13 @@ impl Channel {
         if bmatch_n(preambule, &bits[0..preambule_len])
             && bmatch_n(preambule, &bits[300..300 + preambule_len])
         {
-            log::warn!("sat-{}: FRAME SYNC (N): ts={:.3}", self.prn, self.ts_sec);
+            log::warn!("{}: FRAME SYNC (N): ts={:.3}", self.sv, self.ts_sec);
             return SyncState::NORMAL;
         }
         if bmatch_r(preambule, &bits[0..preambule_len])
             && bmatch_r(preambule, &bits[0..preambule_len])
         {
-            log::warn!("sat-{}: FRAME SYNC (R): ts={:.3}", self.prn, self.ts_sec);
+            log::warn!("{}: FRAME SYNC (R): ts={:.3}", self.sv, self.ts_sec);
             return SyncState::REVERSED;
         }
 
@@ -180,12 +180,7 @@ impl Channel {
 
             if p.abs() >= THRESHOLD_SYNC {
                 self.nav.ssync = self.num_tracking_samples - n;
-                log::warn!(
-                    "sat-{:2} SYNC: p={:.5} ssync={}",
-                    self.prn,
-                    p,
-                    self.nav.ssync
-                );
+                log::warn!("{}: SYNC: p={:.5} ssync={}", self.sv, p, self.nav.ssync);
             }
         } else if (self.num_tracking_samples - self.nav.ssync) % num == 0 {
             let p = self.nav_mean_ip(num);
@@ -196,7 +191,7 @@ impl Channel {
             } else {
                 self.nav.ssync = 0;
                 self.nav.sync_state = SyncState::NORMAL;
-                log::warn!("sat-{}: SYNC {} p={}", self.prn, format!("LOST").red(), p)
+                log::warn!("{}: SYNC {} p={}", self.sv, format!("LOST").red(), p)
             }
         }
         false
@@ -271,8 +266,8 @@ impl Channel {
         self.nav.eph.tlm = getbitu(data, 8, 14);
 
         log::warn!(
-            "sat-{}: subframe-id={subframe_id} tow={:.2} as={anti_spoof} alert={alert}",
-            self.prn,
+            "{}: subframe-id={subframe_id} tow={:.2} as={anti_spoof} alert={alert}",
+            self.sv,
             self.nav.eph.tow_gpst,
         );
 
@@ -282,7 +277,7 @@ impl Channel {
             3 => self.nav_decode_lnav_subframe3(),
             4 => self.nav_decode_lnav_subframe4(),
             5 => self.nav_decode_lnav_subframe5(),
-            _ => log::warn!("sat-{}: invalid subframe id={subframe_id}", self.prn),
+            _ => log::warn!("{}: invalid subframe id={subframe_id}", self.sv),
         }
         subframe_id
     }
@@ -299,7 +294,7 @@ impl Channel {
 
         let ts_sec = self.ts_sec - 20e-3 * 308.0;
         if Self::nav_test_lnav_parity(&buf[0..]) {
-            log::warn!("sat-{}: PARITY OK", self.prn);
+            log::info!("{}: PARITY OK", self.sv);
             self.nav.fsync = self.num_tracking_samples;
             self.nav.sync_state = sync;
             pack_bits(&buf, 0, &mut self.nav.data);
@@ -311,13 +306,13 @@ impl Channel {
             let id = self.nav_decode_lnav_subframe();
 
             let hex_str = hex_str(&self.nav.data[0..], 300);
-            log::warn!("sat-{}: LNAV: id={id} -- {}", self.prn, hex_str);
+            log::warn!("{}: LNAV: id={id} -- {}", self.sv, hex_str);
         } else {
             self.nav.fsync = 0;
             self.nav.sync_state = SyncState::NORMAL;
             self.nav.count_err += 1;
 
-            log::warn!("sat-{}: PARITY ERROR", self.prn);
+            log::warn!("{}: PARITY ERROR", self.sv);
         }
     }
 
@@ -347,7 +342,7 @@ impl Channel {
 
     pub fn nav_decode(&mut self) {
         let preamb: Vec<u8> = [1, 0, 0, 0, 1, 0, 1, 1].to_vec();
-        if self.prn >= 120 && self.prn <= 158 {
+        if self.sv.prn >= 120 && self.sv.prn <= 158 {
             //decode_SBAS(ch);
             //return;
             assert!(false);

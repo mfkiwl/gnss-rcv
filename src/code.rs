@@ -56,8 +56,8 @@ impl Code {
         s
     }
 
-    pub fn get_prn_code_upsampled_complex(&mut self, prn: usize) -> Vec<Complex64> {
-        self.upscaled_codes_complex[prn - 1].clone()
+    pub fn get_prn_code_upsampled_complex(&mut self, prn: u8) -> Vec<Complex64> {
+        self.upscaled_codes_complex[prn as usize - 1].clone()
     }
 
     pub fn init(&mut self) {
@@ -84,8 +84,9 @@ impl Code {
         }
     }
 
-    pub fn get_prn_code_fft(&self, prn: usize) -> Vec<Complex64> {
-        self.prn_code_fft_map.get(&prn).unwrap().clone()
+    pub fn get_prn_code_fft(&self, prn: u8) -> Vec<Complex64> {
+        let prn_usize = prn as usize;
+        self.prn_code_fft_map.get(&prn_usize).unwrap().clone()
     }
 
     fn gen_code(prn: usize) -> Vec<u8> {

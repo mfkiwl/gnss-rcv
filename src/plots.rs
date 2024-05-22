@@ -1,4 +1,5 @@
 use glob::glob;
+use gnss_rs::sv::SV;
 use plotters::prelude::*;
 use rustfft::num_complex::Complex64;
 
@@ -21,14 +22,8 @@ pub fn plot_remove_old_graph() {
     }
 }
 
-pub fn plot_time_graph(
-    prn: usize,
-    name: &str,
-    time_series: &[f64],
-    y_delta: f64,
-    color: &RGBColor,
-) {
-    let file_name = format!("{}/sat-{}-{}.png", PLOT_FOLDER, prn, name);
+pub fn plot_time_graph(sv: SV, name: &str, time_series: &[f64], y_delta: f64, color: &RGBColor) {
+    let file_name = format!("{}/sat-{}-{}.png", PLOT_FOLDER, sv.prn, name);
     let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();
 
@@ -51,7 +46,7 @@ pub fn plot_time_graph(
         .set_label_area_size(LabelAreaPosition::Left, 40)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
         .caption(
-            format!("sat {}: {}", prn, name),
+            format!("sat {}: {}", sv.prn, name),
             ("sans-serif", PLOT_FONT_SIZE),
         )
         .build_cartesian_2d(0.0..x_max, y_min..y_max)
@@ -68,8 +63,8 @@ pub fn plot_time_graph(
     .unwrap();
 }
 
-pub fn plot_iq_scatter(prn: usize, series: &[Complex64]) {
-    let file_name = format!("{}/sat-{}-iq-scatter.png", PLOT_FOLDER, prn);
+pub fn plot_iq_scatter(sv: SV, series: &[Complex64]) {
+    let file_name = format!("{}/sat-{}-iq-scatter.png", PLOT_FOLDER, sv.prn);
     let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();
 
@@ -111,7 +106,7 @@ pub fn plot_iq_scatter(prn: usize, series: &[Complex64]) {
         .set_label_area_size(LabelAreaPosition::Left, 40)
         .set_label_area_size(LabelAreaPosition::Bottom, 40)
         .caption(
-            format!("sat {}: iq-scatter", prn),
+            format!("sat {}: iq-scatter", sv.prn),
             ("sans-serif", PLOT_FONT_SIZE),
         )
         .build_cartesian_2d(x_min..x_max, y_min..y_max)

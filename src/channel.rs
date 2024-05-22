@@ -1,4 +1,6 @@
 use colored::Colorize;
+use gnss_rs::constellation::Constellation;
+use gnss_rs::sv::SV;
 use plotters::prelude::*;
 use rustfft::num_complex::Complex64;
 use rustfft::FftPlanner;
@@ -42,7 +44,7 @@ enum TrackState {
 
 pub struct Channel {
     // constants
-    pub prn: usize,
+    pub sv: SV,
     fc: f64,                 // carrier frequency
     fs: f64,                 // sampling frequency
     fi: f64,                 // intermediate frequency
@@ -54,14 +56,11 @@ pub struct Channel {
     state: TrackState,
     pub ts_sec: f64, // current time
 
-    // idle
     num_idle_samples: usize,
-
-    // searching
-    sum_p: Vec<Vec<f64>>,
+    pub num_tracking_samples: usize,
     num_acq_samples: usize,
 
-    // tracking
+    sum_p: Vec<Vec<f64>>,
     doppler_hz: f64,
     code_off_sec: f64,
     cn0: f64,
@@ -72,7 +71,6 @@ pub struct Channel {
     sum_corr_l: f64,
     sum_corr_p: f64,
     sum_corr_n: f64,
-    pub num_tracking_samples: usize,
 
     // plots
     last_log_ts: f64,
@@ -92,14 +90,12 @@ impl Drop for Channel {
 }
 
 impl Channel {
-    pub fn new(prn: usize, gold_code: &mut Code, fs: f64, fi: f64) -> Self {
-        log::info!("{}", format!("sat {prn:2}: new: ",).green());
-
+    pub fn new(constellation: Constellation, prn: u8, code: &mut Code, fs: f64, fi: f64) -> Self {
         Self {
-            prn,
+            sv: SV::new(constellation, prn),
             fft_planner: FftPlanner::new(),
-            prn_code: gold_code.get_prn_code_upsampled_complex(prn),
-            prn_code_fft: gold_code.get_prn_code_fft(prn),
+            prn_code: code.get_prn_code_upsampled_complex(prn),
+            prn_code_fft: code.get_prn_code_fft(prn),
             ts_sec: 0.0,
 
             fc: L1CA_HZ,
@@ -138,16 +134,16 @@ impl Channel {
     fn idle_start(&mut self) {
         if self.state == TrackState::TRACKING {
             log::warn!(
-                "sat-{}: {} cn0={:.1} ts_sec={:.3}",
-                self.prn,
+                "{}: {} cn0={:.1} ts_sec={:.3}",
+                self.sv,
                 format!("LOST").red(),
                 self.cn0,
                 self.ts_sec,
             );
         } else {
             log::info!(
-                "sat-{}: IDLE cn0={:.1} ts_sec={:.3}",
-                self.prn,
+                "{}: IDLE cn0={:.1} ts_sec={:.3}",
+                self.sv,
                 self.cn0,
                 self.ts_sec,
             );
@@ -194,8 +190,8 @@ impl Channel {
         code_offset_idx: usize,
     ) {
         log::warn!(
-            "sat-{}: {} cn0={cn0:.1} dopp={doppler_hz:5.0} code_off={code_offset_idx} ts_sec={:.3}",
-            self.prn,
+            "{}: {} cn0={cn0:.1} dopp={doppler_hz:5.0} code_off={code_offset_idx} ts_sec={:.3}",
+            self.sv,
             format!("LOCK").green(),
             self.ts_sec,
         );
@@ -235,7 +231,7 @@ impl Channel {
 
     fn plot_code_phase_offset(&self) {
         plot_time_graph(
-            self.prn,
+            self.sv,
             "code-phase-offset",
             self.code_phase_offset_hist.as_slice(),
             50.0,
@@ -245,7 +241,7 @@ impl Channel {
 
     fn plot_phi_error(&self) {
         plot_time_graph(
-            self.prn,
+            self.sv,
             "phi-error",
             self.phi_error_hist.as_slice(),
             0.5,
@@ -255,7 +251,7 @@ impl Channel {
 
     fn plot_doppler_hz(&self) {
         plot_time_graph(
-            self.prn,
+            self.sv,
             "doppler-hz",
             &self.doppler_hz_hist.as_slice(),
             10.0,
@@ -266,7 +262,7 @@ impl Channel {
     fn plot_iq_scatter(&self) {
         let len = self.corr_p_hist.len();
         let n = usize::min(len, 2000);
-        plot_iq_scatter(self.prn, &&self.corr_p_hist[len - n..len]);
+        plot_iq_scatter(self.sv, &&self.corr_p_hist[len - n..len]);
     }
 
     fn acquisition_process(&mut self, iq_vec2: &Vec<Complex64>) {
@@ -475,8 +471,8 @@ impl Channel {
         let code_idx = self.code_phase_offset_hist.last().unwrap();
         if self.ts_sec - self.last_log_ts > 3.0 {
             log::warn!(
-                "sat-{:2}: {} cn0={:.1} dopp={:5.0} code_idx={:4.0} phi={:5.2} ts_sec={:.3}",
-                self.prn,
+                "{}: {} cn0={:.1} dopp={:5.0} code_idx={:4.0} phi={:5.2} ts_sec={:.3}",
+                self.sv,
                 format!("TRCK").green(),
                 self.cn0,
                 self.doppler_hz,
@@ -544,8 +540,8 @@ impl Channel {
         self.ts_sec = ts_sec;
 
         log::info!(
-            "sat-{}: processing: ts_sec={:.4}: cn0={:.1} dopp={:.0} code_off_sec={:.6}",
-            self.prn,
+            "{}: processing: ts_sec={:.4}: cn0={:.1} dopp={:.0} code_off_sec={:.6}",
+            self.sv,
             self.ts_sec,
             self.cn0,
             self.doppler_hz,
