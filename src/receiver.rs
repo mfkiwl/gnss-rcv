@@ -2,10 +2,10 @@ use rayon::prelude::*;
 use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
 
+use crate::channel::GnssSatellite;
 use crate::constants::ACQUISITION_WINDOW_MSEC;
 use crate::gold_code::GoldCode;
 use crate::recording::IQRecording;
-use crate::satellite::GnssSatellite;
 
 use crate::types::IQSample;
 use crate::util::get_num_samples_per_msec;

@@ -1,5 +1,5 @@
 use crate::{
-    satellite::GnssSatellite,
+    channel::GnssSatellite,
     util::{
         bmatch_n, bmatch_r, getbits, getbits2, getbitu, getbitu2, hex_str, pack_bits, xor_bits,
     },
