@@ -14,7 +14,6 @@ use std::time::Instant;
 use structopt::StructOpt;
 
 use gnss_rcv::code::Code;
-use gnss_rcv::constants::NUM_GPS_SATS;
 use gnss_rcv::receiver::Receiver;
 use gnss_rcv::recording::IQFileType;
 use gnss_rcv::recording::IQRecording;
@@ -85,7 +84,7 @@ fn main() -> std::io::Result<()> {
     let exit_req = Arc::new(AtomicBool::new(false));
 
     if opt.print_gold_code {
-        Code::print_gold_codes();
+        Code::print_l1ca_codes();
         return Ok(());
     }
 
@@ -108,13 +107,13 @@ fn main() -> std::io::Result<()> {
             sat_vec.push(SV::new(Constellation::GPS, prn));
         }
     } else {
-        for id in 0..NUM_GPS_SATS as u8 {
-            sat_vec.push(SV::new(Constellation::GPS, id + 1));
+        for prn in 1..=32 as u8 {
+            sat_vec.push(SV::new(Constellation::GPS, prn));
         }
         let use_sbas = false;
         if use_sbas {
-            for id in 120..158 + 1 as u8 {
-                sat_vec.push(SV::new(Constellation::GPS, id));
+            for prn in 120..=158 as u8 {
+                sat_vec.push(SV::new(Constellation::GPS, prn));
             }
         }
     }
@@ -122,7 +121,7 @@ fn main() -> std::io::Result<()> {
     let recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
     let mut receiver = Receiver::new(recording, opt.fs, opt.fi, opt.off_msec);
 
-    receiver.init(sat_vec);
+    receiver.init("L1CA", sat_vec);
     let mut n = 0;
     let ts = Instant::now();
 

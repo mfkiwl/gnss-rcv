@@ -1,8 +1,6 @@
 use rustfft::{num_complex::Complex64, FftPlanner};
 use std::ops::Mul;
 
-use crate::constants::PRN_CODE_LEN;
-
 const PI: f64 = std::f64::consts::PI;
 
 pub fn norm_square(v: &Vec<Complex64>) -> f64 {
@@ -25,14 +23,8 @@ pub fn get_max_with_idx(v: &Vec<f64>) -> (usize, f64) {
     (idx, max)
 }
 
-pub fn get_num_samples_per_msec() -> usize {
-    PRN_CODE_LEN * 2
-}
-
 pub fn get_average(v: &Vec<f64>) -> f64 {
-    let sum: f64 = v.iter().sum();
-
-    sum / v.len() as f64
+    v.iter().sum::<f64>() / v.len() as f64
 }
 
 fn normalize_post_fft(data: &mut Vec<Complex64>) {
@@ -111,15 +103,6 @@ pub fn getbits(buf: &[u8], pos: u32, len: u32) -> i32 {
     res as i32
 }
 
-/* extract unsigned/signed bits ------------------------------------------------
-* extract unsigned/signed bits from byte data (two components case)
-* args   : uint8_t *buff    I   byte data
-*          int    p1        I   first bit start position (bits)
-*          int    l1        I   first bit length (bits)
-*          int    p2        I   second bit start position (bits)
-*          int    l2        I   seconf bit length (bits)
-* return : extracted unsigned/signed bits
-*-----------------------------------------------------------------------------*/
 pub fn getbitu2(buf: &[u8], p1: u32, l1: u32, p2: u32, l2: u32) -> u32 {
     (getbitu(buf, p1, l1) << l2) + getbitu(buf, p2, l2)
 }

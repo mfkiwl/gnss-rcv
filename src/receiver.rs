@@ -12,15 +12,14 @@ use std::str::FromStr;
 use std::time::Instant;
 
 use crate::channel::Channel;
-use crate::code::Code;
-use crate::constants::ACQUISITION_WINDOW_MSEC;
 use crate::recording::IQRecording;
 use crate::types::IQSample;
-use crate::util::get_num_samples_per_msec;
+
+const PERIOD_RCV: f64 = 0.001;
 
 pub struct Receiver {
-    code: Code,
     pub recording: IQRecording,
+    period_sp: usize, // samples per period
     fs: f64,
     fi: f64,
     off_samples: usize,
@@ -36,12 +35,13 @@ impl Drop for Receiver {
 
 impl Receiver {
     pub fn new(recording: IQRecording, fs: f64, fi: f64, off_msec: usize) -> Self {
+        let period_sp = (PERIOD_RCV * fs) as usize;
         Self {
-            code: Code::new(),
             recording,
+            period_sp,
             fs,
             fi,
-            off_samples: off_msec * get_num_samples_per_msec(),
+            off_samples: off_msec * period_sp,
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_ts_sec_tail: 0.0,
             channels: HashMap::<SV, Channel>::new(),
@@ -49,28 +49,27 @@ impl Receiver {
         }
     }
 
-    pub fn init(&mut self, sat_vec: Vec<SV>) {
+    pub fn init(&mut self, sig: &str, sat_vec: Vec<SV>) {
         for sv in sat_vec {
             self.channels
-                .insert(sv, Channel::new(sv, &mut self.code, self.fs, self.fi));
+                .insert(sv, Channel::new(sig, sv, self.fs, self.fi));
         }
     }
 
     fn fetch_samples_msec(&mut self) -> Result<IQSample, Box<dyn std::error::Error>> {
         let num_samples = if self.cached_iq_vec.len() == 0 {
-            2 * get_num_samples_per_msec()
+            2 * self.period_sp
         } else {
-            get_num_samples_per_msec()
+            self.period_sp
         };
         let mut sample = self.recording.read_iq_file(self.off_samples, num_samples)?;
 
         self.off_samples += num_samples;
         self.cached_iq_vec.append(&mut sample.iq_vec);
-        self.cached_ts_sec_tail +=
-            num_samples as f64 / (1000.0 * get_num_samples_per_msec() as f64);
+        self.cached_ts_sec_tail += num_samples as f64 / (1000.0 * self.period_sp as f64);
 
-        if self.cached_iq_vec.len() > ACQUISITION_WINDOW_MSEC * get_num_samples_per_msec() {
-            let num_samples = get_num_samples_per_msec();
+        if self.cached_iq_vec.len() > 2 * self.period_sp {
+            let num_samples = self.period_sp;
             let _ = self.cached_iq_vec.drain(0..num_samples);
         }
         let len = self.cached_iq_vec.len();
@@ -80,7 +79,7 @@ impl Receiver {
         // [...code...][...code...]
         //             ^
         Ok(IQSample {
-            iq_vec: self.cached_iq_vec[len - 2 * get_num_samples_per_msec()..].to_vec(),
+            iq_vec: self.cached_iq_vec[len - 2 * self.period_sp..].to_vec(),
             ts_sec: self.cached_ts_sec_tail - 0.001,
         })
     }
