@@ -1,4 +1,4 @@
-//use chrono::Utc;
+use chrono::Utc;
 use rustfft::{num_complex::Complex64, FftPlanner};
 use std::ops::Mul;
 
@@ -189,22 +189,3 @@ pub fn bmatch_n(bits0: &[u8], bits1: &[u8]) -> bool {
     }
     true
 }
-
-/* adjust gps week number ------------------------------------------------------
-* adjust gps week number using cpu time
-* args   : int   week       I   not-adjusted gps week number
-* return : adjusted gps week number
-*-----------------------------------------------------------------------------*/
-/*
-extern int adjgpsweek(int week)
-{
-    int w;
-    (void)time2gpst(utc2gpst(timeget()),&w);
-    if (w<1560) w=1560; /* use 2009/12/1 if time is earlier than 2009/12/1 */
-    return week+(w-week+512)/1024*1024;
-}
-*/
-
-//pub fn adjust_gps_week(week: usize) {
-//    let now_utc = Utc::now();
-//}

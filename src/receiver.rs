@@ -95,32 +95,13 @@ impl Receiver {
         })
     }
 
-    fn sv_interpolator(t: Epoch, sv: SV, _size: usize) -> Option<InterpolationResult> {
-        log::warn!("{}: sv_interpolator for {}", sv, t);
+    fn sv_interpolator(t: Epoch, sv: SV, size: usize) -> Option<InterpolationResult> {
+        log::warn!("{sv}: sv_interpolator for {t} sz={size}");
 
         None
     }
 
-    fn compute_fix(&mut self, ts_sec: f64) {
-        if self.last_fix_sec.elapsed().as_secs_f32() < 2.0 {
-            return;
-        }
-        log::warn!("t={:.3} -- attempting fix", ts_sec);
-
-        // somewhere in the middle of Lake Leman
-        let initial = AprioriPosition::from_geo(Vector3::new(46.45, 6.62, 0.0));
-
-        let mut cfg = Config::static_preset(Method::SPP);
-
-        cfg.min_snr = None;
-        cfg.min_sv_elev = None;
-        cfg.solver.filter = Filter::LSQ;
-        cfg.sol_type = PVTSolutionType::PositionVelocityTime;
-
-        let mut solver = Solver::new(&cfg, initial, Self::sv_interpolator).expect("Solver issue");
-
-        let pool: Vec<Candidate> = vec![];
-
+    fn get_tropo_iono_bias(&mut self) -> (TroposphereBias, IonosphereBias) {
         let iono_bias = IonosphereBias {
             kb_model: None,
             bd_model: None,
@@ -131,7 +112,29 @@ impl Receiver {
             total: None,
             zwd_zdd: None,
         };
+        (tropo_bias, iono_bias)
+    }
+
+    fn compute_fix(&mut self, ts_sec: f64) {
+        if self.last_fix_sec.elapsed().as_secs_f32() < 2.0 {
+            return;
+        }
+        log::warn!("t={:.3} -- attempting fix", ts_sec);
+
+        // somewhere in the middle of Lake Leman
+        let initial = AprioriPosition::from_geo(Vector3::new(46.5, 6.6, 0.0));
+
+        let mut cfg = Config::static_preset(Method::SPP);
+
+        cfg.min_snr = None;
+        cfg.min_sv_elev = None;
+        cfg.solver.filter = Filter::LSQ;
+        cfg.sol_type = PVTSolutionType::PositionVelocityTime;
+
         let epoch = Epoch::from_str("2020-06-25T12:00:00 GPST").unwrap();
+        let pool: Vec<Candidate> = vec![]; // XXX
+        let (tropo_bias, iono_bias) = self.get_tropo_iono_bias();
+        let mut solver = Solver::new(&cfg, initial, Self::sv_interpolator).expect("Solver issue");
         let solutions = solver.resolve(epoch, &pool, &iono_bias, &tropo_bias);
         if solutions.is_ok() {
             log::warn!("got a fix: {:?}", solutions)

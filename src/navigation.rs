@@ -5,6 +5,7 @@ use crate::{
     },
 };
 use colored::Colorize;
+use gnss_rtk::prelude::Epoch;
 
 const SDR_MAX_NSYM: usize = 18000;
 const SDR_MAX_DATA: usize = 4096;
@@ -35,49 +36,42 @@ impl Default for SyncState {
 #[derive(Default)]
 struct Ephemeris {
     update: bool,
-    tow_gpst: f64,
+    tow: u32,
     tlm: u32,
 
-    iode: u32,
-    iodc: u32, /* IODE,IODC */
-    sva: u32,  /* SV accuracy (URA index) */
-    svh: u32,  /* SV health (0:ok) */
-    week: u32, /* GPS/QZS: gps week, GAL: galileo week */
-    code: u32, /* GPS/QZS: code on L2, GAL/CMP: data sources */
-    flag: u32, /* GPS/QZS: L2 P data flag, CMP: nav type */
-    /* GPS/QZS:tgd[0]=TGD */
-    /* GAL    :tgd[0]=BGD E5a/E1,tgd[1]=BGD E5b/E1 */
-    /* CMP    :tgd[0]=BGD1,tgd[1]=BGD2 */
+    iode: u32, // Issue of Data, Ephemeris
+    iodc: u32, // Issue of Data, Clock
+    sva: u32,  // SV accuracy (URA index)
+    svh: u32,  // SV health (0:ok)
+    week: u32, // GPS/QZS: gps week, GAL: galileo week
+    code: u32, // GPS/QZS: code on L2, GAL/CMP: data sources
+    flag: u32, // GPS/QZS: L2 P data flag, CMP: nav type
+    tgd: f64,  // GPS: Estimated Group Delay Differential
     f0: f64,
     f1: f64,
-    f2: f64,  /* SV clock parameters (af0,af1,af2) */
-    tgd: f64, /* group delay parameters */
+    f2: f64, // SV clock parameters (af0,af1,af2)
     omg0: f64,
     omgd: f64,
     omg: f64,
-    cic: f64,
-    cis: f64,
-    crc: f64,
-    crs: f64,
-    cuc: f64,
-    cus: f64,
-    idot: f64,
-    i0: f64,
-    m0: f64,
-    a: f64,
-    e: f64,
-    deln: f64,
-    toes: f64,
-    fit: f64,
+    cic: f64, // Amplitude of the Cosine Harmonic Correction Term to the Angle of Inclination
+    cis: f64, // Amplitude of the Sine   Harmonic Correction Term to the Angle of Inclination
+    crc: f64, // Amplitude of the Cosine Harmonic Correction Term to the Orbit Radius
+    crs: f64, // Amplitude of the Sine   Harmonic Correction Term to the Orbit Radius
+    cuc: f64, // Amplitude of the Cosine Harmonic Correction Term to the Argument of Latitude
+    cus: f64, // Amplitude of the Sine   Harmonic Correction Term to the Argument of Latitude
+    idot: f64, // Rate of Inclination Angle
+    i0: f64,  // Inclination Angle at Reference Time
+    m0: f64,  // Mean Anomaly at Reference Time
+    a: f64,   // semi major axis
+    e: f64,   // Eccentricity
+    deln: f64, // Mean Motion Difference From Computed Value
+    toes: f64, // Reference Time Ephemeris
+    fit: f64, // fit interval (h)
     toc: f64,
     /*
     gtime_t toe,toc,ttr; /* Toe,Toc,T_trans */
                         /* SV orbit parameters */
     double A,e,i0,OMG0,omg,M0,deln,OMGd,idot;
-    double crc,crs,cuc,cus,cic,cis;
-    double toes;        /* Toe (s) in week */
-    double fit;         /* fit interval (h) */
-
 
                         */
 }
@@ -201,7 +195,8 @@ impl Channel {
     fn nav_decode_lnav_subframe1(&mut self) {
         let buf = &self.nav.data[0..];
 
-        self.nav.eph.week = getbitu(buf, 60, 10) + 1024;
+        self.nav.eph.tow = getbitu(buf, 30, 17) * 6;
+        self.nav.eph.week = getbitu(buf, 60, 10) + 2048;
         self.nav.eph.code = getbitu(buf, 70, 2);
         self.nav.eph.sva = getbitu(buf, 72, 4);
         self.nav.eph.svh = getbitu(buf, 76, 6);
@@ -213,18 +208,25 @@ impl Channel {
         self.nav.eph.f2 = getbits(buf, 240, 8) as f64 * P2_55;
         self.nav.eph.f1 = getbits(buf, 248, 16) as f64 * P2_43;
         self.nav.eph.f0 = getbits(buf, 270, 22) as f64 * P2_31;
+
+        let week_to_secs = self.nav.eph.week * 7 * 24 * 60 * 60;
+        let secs_gpst = week_to_secs + self.nav.eph.tow;
+
+        let t = Epoch::from_gpst_seconds(secs_gpst as f64);
+        log::warn!("{}: ---- {}", self.sv, t);
     }
 
     fn nav_decode_lnav_subframe2(&mut self) {
         let buf = &self.nav.data[0..];
         let oldiode = self.nav.eph.iode;
 
+        self.nav.eph.tow = getbitu(buf, 30, 17) * 6;
         self.nav.eph.iode = getbitu(buf, 60, 8);
         self.nav.eph.crs = getbits(buf, 68, 16) as f64 * P2_5;
         self.nav.eph.deln = getbits(buf, 90, 16) as f64 * P2_43 * SC2RAD;
         self.nav.eph.m0 = getbits2(buf, 106, 8, 120, 24) as f64 * P2_31 * SC2RAD;
-        self.nav.eph.cuc = getbits(buf, 150, 16) as f64 * P2_29;
         self.nav.eph.e = getbitu2(buf, 166, 8, 180, 24) as f64 * P2_33;
+        self.nav.eph.cuc = getbits(buf, 150, 16) as f64 * P2_29;
         self.nav.eph.cus = getbits(buf, 210, 16) as f64 * P2_29;
         let sqrt_a = getbitu2(buf, 226, 8, 240, 24) as f64 * P2_19;
         self.nav.eph.toes = getbitu(buf, 270, 16) as f64 * 16.0;
@@ -238,18 +240,19 @@ impl Channel {
     }
 
     fn nav_decode_lnav_subframe3(&mut self) {
-        let data = &self.nav.data[0..];
+        let buf = &self.nav.data[0..];
         let oldiode = self.nav.eph.iode;
 
-        self.nav.eph.cic = getbits(data, 60, 16) as f64 * P2_29;
-        self.nav.eph.omg0 = getbits2(data, 76, 8, 90, 24) as f64 * P2_31 * SC2RAD;
-        self.nav.eph.cis = getbits(data, 120, 16) as f64 * P2_29;
-        self.nav.eph.i0 = getbits2(data, 136, 8, 150, 24) as f64 * P2_31 * SC2RAD;
-        self.nav.eph.crc = getbits(data, 180, 16) as f64 * P2_5;
-        self.nav.eph.omg = getbits2(data, 196, 8, 210, 24) as f64 * P2_31 * SC2RAD;
-        self.nav.eph.omgd = getbits(data, 240, 24) as f64 * P2_43 * SC2RAD;
-        self.nav.eph.iode = getbitu(data, 270, 8);
-        self.nav.eph.idot = getbits(data, 278, 14) as f64 * P2_43 * SC2RAD;
+        self.nav.eph.tow = getbitu(buf, 30, 17) * 6;
+        self.nav.eph.cic = getbits(buf, 60, 16) as f64 * P2_29;
+        self.nav.eph.cis = getbits(buf, 120, 16) as f64 * P2_29;
+        self.nav.eph.omg0 = getbits2(buf, 76, 8, 90, 24) as f64 * P2_31 * SC2RAD;
+        self.nav.eph.i0 = getbits2(buf, 136, 8, 150, 24) as f64 * P2_31 * SC2RAD;
+        self.nav.eph.crc = getbits(buf, 180, 16) as f64 * P2_5;
+        self.nav.eph.omg = getbits2(buf, 196, 8, 210, 24) as f64 * P2_31 * SC2RAD;
+        self.nav.eph.omgd = getbits(buf, 240, 24) as f64 * P2_43 * SC2RAD;
+        self.nav.eph.iode = getbitu(buf, 270, 8);
+        self.nav.eph.idot = getbits(buf, 278, 14) as f64 * P2_43 * SC2RAD;
 
         /* ephemeris update flag */
         if oldiode != self.nav.eph.iode {
@@ -257,8 +260,18 @@ impl Channel {
         }
     }
 
-    fn nav_decode_lnav_subframe4(&mut self) {}
-    fn nav_decode_lnav_subframe5(&mut self) {}
+    fn nav_decode_lnav_subframe4(&mut self) {
+        let buf = &self.nav.data[0..];
+        self.nav.eph.tow = getbitu(buf, 30, 17) * 6;
+        let page_id = getbitu(buf, 60, 6);
+        log::warn!("{}: frame5: page: {page_id}", self.sv);
+    }
+    fn nav_decode_lnav_subframe5(&mut self) {
+        let buf = &self.nav.data[0..];
+        self.nav.eph.tow = getbitu(buf, 30, 17) * 6;
+        let page_id = getbitu(buf, 60, 6);
+        log::warn!("{}: frame5: page: {page_id}", self.sv);
+    }
 
     fn nav_decode_lnav_subframe(&mut self) -> u32 {
         let data = &self.nav.data[0..];
@@ -266,12 +279,11 @@ impl Channel {
         let alert = getbitu(data, 47, 1);
         let anti_spoof = getbitu(data, 48, 1);
         self.nav.eph.tlm = getbitu(data, 8, 14);
-        self.nav.eph.tow_gpst = getbitu(data, 30, 17) as f64 * 6.0;
 
         log::warn!(
             "{}: subframe-id={subframe_id} tow={:.2} as={anti_spoof} alert={alert}",
             self.sv,
-            self.nav.eph.tow_gpst,
+            self.nav.eph.tow,
         );
 
         match subframe_id {
