@@ -59,8 +59,8 @@ struct Ephemeris {
     cis: f64,
     crc: f64,
     crs: f64,
-    cus: f64,
     cuc: f64,
+    cus: f64,
     idot: f64,
     i0: f64,
     m0: f64,
@@ -69,6 +69,7 @@ struct Ephemeris {
     deln: f64,
     toes: f64,
     fit: f64,
+    toc: f64,
     /*
     gtime_t toe,toc,ttr; /* Toe,Toc,T_trans */
                         /* SV orbit parameters */
@@ -198,34 +199,36 @@ impl Channel {
     }
 
     fn nav_decode_lnav_subframe1(&mut self) {
-        let data = &self.nav.data[0..];
+        let buf = &self.nav.data[0..];
 
-        self.nav.eph.week = getbitu(data, 60, 10) + 1024;
-        self.nav.eph.code = getbitu(data, 70, 2);
-        self.nav.eph.sva = getbitu(data, 72, 4);
-        self.nav.eph.svh = getbitu(data, 76, 6);
-        self.nav.eph.iodc = getbitu2(data, 82, 2, 210, 8);
-        self.nav.eph.flag = getbitu(data, 90, 1);
-        self.nav.eph.tgd = getbits(data, 196, 8) as f64 * P2_31;
-        self.nav.eph.f2 = getbits(data, 240, 8) as f64 * P2_55;
-        self.nav.eph.f1 = getbits(data, 248, 16) as f64 * P2_43;
-        self.nav.eph.f0 = getbits(data, 270, 22) as f64 * P2_31;
+        self.nav.eph.week = getbitu(buf, 60, 10) + 1024;
+        self.nav.eph.code = getbitu(buf, 70, 2);
+        self.nav.eph.sva = getbitu(buf, 72, 4);
+        self.nav.eph.svh = getbitu(buf, 76, 6);
+
+        self.nav.eph.iodc = getbitu2(buf, 82, 2, 210, 8);
+        self.nav.eph.flag = getbitu(buf, 90, 1);
+        self.nav.eph.tgd = getbits(buf, 196, 8) as f64 * P2_31;
+        self.nav.eph.toc = getbitu(buf, 218, 16) as f64 * 16.0;
+        self.nav.eph.f2 = getbits(buf, 240, 8) as f64 * P2_55;
+        self.nav.eph.f1 = getbits(buf, 248, 16) as f64 * P2_43;
+        self.nav.eph.f0 = getbits(buf, 270, 22) as f64 * P2_31;
     }
 
     fn nav_decode_lnav_subframe2(&mut self) {
-        let data = &self.nav.data[0..];
+        let buf = &self.nav.data[0..];
         let oldiode = self.nav.eph.iode;
 
-        self.nav.eph.iode = getbitu(data, 60, 8);
-        self.nav.eph.crs = getbits(data, 68, 16) as f64 * P2_5;
-        self.nav.eph.deln = getbits(data, 90, 16) as f64 * P2_43 * SC2RAD;
-        self.nav.eph.m0 = getbits2(data, 106, 8, 120, 24) as f64 * P2_31 * SC2RAD;
-        self.nav.eph.cuc = getbits(data, 150, 16) as f64 * P2_29;
-        self.nav.eph.e = getbitu2(data, 166, 8, 180, 24) as f64 * P2_33;
-        self.nav.eph.cus = getbits(data, 210, 16) as f64 * P2_29;
-        let sqrt_a = getbitu2(data, 226, 8, 240, 24) as f64 * P2_19;
-        self.nav.eph.toes = getbitu(data, 270, 16) as f64 * 16.0;
-        self.nav.eph.fit = getbitu(data, 286, 1) as f64;
+        self.nav.eph.iode = getbitu(buf, 60, 8);
+        self.nav.eph.crs = getbits(buf, 68, 16) as f64 * P2_5;
+        self.nav.eph.deln = getbits(buf, 90, 16) as f64 * P2_43 * SC2RAD;
+        self.nav.eph.m0 = getbits2(buf, 106, 8, 120, 24) as f64 * P2_31 * SC2RAD;
+        self.nav.eph.cuc = getbits(buf, 150, 16) as f64 * P2_29;
+        self.nav.eph.e = getbitu2(buf, 166, 8, 180, 24) as f64 * P2_33;
+        self.nav.eph.cus = getbits(buf, 210, 16) as f64 * P2_29;
+        let sqrt_a = getbitu2(buf, 226, 8, 240, 24) as f64 * P2_19;
+        self.nav.eph.toes = getbitu(buf, 270, 16) as f64 * 16.0;
+        self.nav.eph.fit = getbitu(buf, 286, 1) as f64;
         self.nav.eph.a = sqrt_a * sqrt_a;
 
         /* ephemeris update flag */
@@ -260,10 +263,10 @@ impl Channel {
     fn nav_decode_lnav_subframe(&mut self) -> u32 {
         let data = &self.nav.data[0..];
         let subframe_id = getbitu(data, 49, 3);
-        self.nav.eph.tow_gpst = getbitu(data, 30, 17) as f64 * 6.0;
         let alert = getbitu(data, 47, 1);
         let anti_spoof = getbitu(data, 48, 1);
         self.nav.eph.tlm = getbitu(data, 8, 14);
+        self.nav.eph.tow_gpst = getbitu(data, 30, 17) as f64 * 6.0;
 
         log::warn!(
             "{}: subframe-id={subframe_id} tow={:.2} as={anti_spoof} alert={alert}",

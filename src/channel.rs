@@ -43,7 +43,6 @@ enum TrackState {
 
 #[derive(Default)]
 struct Tracking {
-    sum_p: Vec<Vec<f64>>,
     doppler_hz: f64,
     code_off_sec: f64,
     cn0: f64,
@@ -54,6 +53,7 @@ struct Tracking {
     sum_corr_l: f64,
     sum_corr_p: f64,
     sum_corr_n: f64,
+    sum_p: Vec<Vec<f64>>,
 }
 
 #[derive(Default)]
@@ -478,30 +478,22 @@ impl Channel {
         }
     }
 
-    fn trim_rolling_buffers(&mut self) {
+    fn hist_trim(&mut self) {
         if self.hist.doppler_hz_hist.len() > HISTORY_NUM {
-            let _ = self
-                .hist
-                .doppler_hz_hist
-                .drain(0..self.hist.doppler_hz_hist.len() - HISTORY_NUM);
+            self.hist.doppler_hz_hist.rotate_left(1);
+            self.hist.doppler_hz_hist.pop();
         }
         if self.hist.phi_error_hist.len() > HISTORY_NUM {
-            let _ = self
-                .hist
-                .phi_error_hist
-                .drain(0..self.hist.phi_error_hist.len() - HISTORY_NUM);
+            self.hist.phi_error_hist.rotate_left(1);
+            self.hist.phi_error_hist.pop();
         }
         if self.hist.corr_p_hist.len() > HISTORY_NUM {
-            let _ = self
-                .hist
-                .corr_p_hist
-                .drain(0..self.hist.corr_p_hist.len() - HISTORY_NUM);
+            self.hist.corr_p_hist.rotate_left(1);
+            self.hist.corr_p_hist.pop();
         }
         if self.hist.code_phase_offset_hist.len() > HISTORY_NUM {
-            let _ = self
-                .hist
-                .code_phase_offset_hist
-                .drain(0..self.hist.code_phase_offset_hist.len() - HISTORY_NUM);
+            self.hist.code_phase_offset_hist.rotate_left(1);
+            self.hist.code_phase_offset_hist.pop();
         }
     }
 
@@ -524,7 +516,7 @@ impl Channel {
         }
 
         self.hist.doppler_hz_hist.push(self.trk.doppler_hz);
-        self.trim_rolling_buffers();
+        self.hist_trim();
         self.update_all_plots(false);
         self.num_tracking_samples += 1;
         self.log_periodically();
