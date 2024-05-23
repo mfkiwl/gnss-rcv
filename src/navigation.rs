@@ -355,12 +355,15 @@ impl Channel {
         true
     }
 
+    fn nav_decode_sbas(&mut self) {
+        log::warn!("{}: SBAS frame", self.sv);
+    }
+
     pub fn nav_decode(&mut self) {
         let preamb: Vec<u8> = [1, 0, 0, 0, 1, 0, 1, 1].to_vec();
         if self.sv.prn >= 120 && self.sv.prn <= 158 {
-            //decode_SBAS(ch);
-            //return;
-            assert!(false);
+            self.nav_decode_sbas();
+            return;
         }
 
         if !self.nav_sync_symbol(20) {

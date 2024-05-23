@@ -108,6 +108,12 @@ fn main() -> std::io::Result<()> {
         for id in 0..NUM_GPS_SATS as u8 {
             sat_vec.push(id + 1);
         }
+        let use_sbas = false;
+        if use_sbas {
+            for id in 120..158 + 1 as u8 {
+                sat_vec.push(id);
+            }
+        }
     }
 
     plot_remove_old_graph();

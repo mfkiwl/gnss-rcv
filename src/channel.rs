@@ -19,7 +19,7 @@ use crate::util::calc_correlation;
 use crate::util::doppler_shift;
 
 const SP_CORR: f64 = 0.5;
-const T_IDLE: f64 = 1.0;
+const T_IDLE: f64 = 3.0;
 const T_ACQ: f64 = 0.01; // 10msec acquisition time
 const T_FPULLIN: f64 = 1.0;
 const T_NPULLIN: f64 = 1.5; // navigation data pullin time (s)

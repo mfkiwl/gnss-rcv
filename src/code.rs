@@ -3,43 +3,6 @@ use crate::constants::PRN_CODE_LEN;
 use rustfft::{num_complex::Complex64, FftPlanner};
 use std::collections::HashMap;
 
-const G1_TAP: [usize; 2] = [2, 9];
-const G2_TAP: [usize; 6] = [1, 2, 5, 7, 8, 9];
-const PRN_TO_G2_TAP: [(usize, usize); NUM_GPS_SATS] = [
-    (2, 6),
-    (3, 7),
-    (4, 8),
-    (5, 9),
-    (1, 9),
-    (2, 10),
-    (1, 8),
-    (2, 9),
-    (3, 10),
-    (2, 3),
-    (3, 4),
-    (5, 6),
-    (6, 7),
-    (7, 8),
-    (8, 9),
-    (9, 10),
-    (1, 4),
-    (2, 5),
-    (3, 6),
-    (4, 7),
-    (5, 8),
-    (6, 9),
-    (1, 3),
-    (4, 6),
-    (5, 7),
-    (6, 8),
-    (7, 9),
-    (8, 10),
-    (1, 6),
-    (2, 7),
-    (3, 8),
-    (4, 9),
-];
-
 pub struct Code {
     upscaled_codes_complex: Vec<Vec<Complex64>>,
     prn_code_fft_map: HashMap<usize, Vec<Complex64>>,
@@ -48,7 +11,7 @@ pub struct Code {
 impl Code {
     pub fn new() -> Self {
         let mut s = Self {
-            upscaled_codes_complex: vec![vec![]; NUM_GPS_SATS],
+            upscaled_codes_complex: vec![vec![]; 255],
             prn_code_fft_map: HashMap::<usize, Vec<Complex64>>::new(),
         };
 
@@ -60,27 +23,35 @@ impl Code {
         self.upscaled_codes_complex[prn as usize - 1].clone()
     }
 
-    pub fn init(&mut self) {
+    pub fn add_upscale_code(&mut self, prn: usize) {
         let mut fft_planner: FftPlanner<f64> = FftPlanner::new();
 
+        let one_prn_code = Self::gen_code(prn);
+        let mut prn_code_upsampled: Vec<_> = one_prn_code
+            .iter()
+            .map(|&x| Complex64 {
+                re: if x == 0 { -1.0 } else { 1.0 },
+                im: 0.0,
+            })
+            .flat_map(|x| [x, x])
+            .collect();
+        assert_eq!(prn_code_upsampled.len(), PRN_CODE_LEN * 2);
+
+        self.upscaled_codes_complex[prn - 1] = prn_code_upsampled.clone();
+
+        let fft_fw = fft_planner.plan_fft_forward(prn_code_upsampled.len());
+        fft_fw.process(&mut prn_code_upsampled);
+
+        self.prn_code_fft_map.insert(prn, prn_code_upsampled); // fft done
+    }
+
+    pub fn init(&mut self) {
         for prn in 1..NUM_GPS_SATS + 1 {
-            let one_prn_code = Self::gen_code(prn);
-            let mut prn_code_upsampled: Vec<_> = one_prn_code
-                .iter()
-                .map(|&x| Complex64 {
-                    re: if x == 0 { -1.0 } else { 1.0 },
-                    im: 0.0,
-                })
-                .flat_map(|x| [x, x])
-                .collect();
-            assert_eq!(prn_code_upsampled.len(), PRN_CODE_LEN * 2);
-
-            self.upscaled_codes_complex[prn - 1] = prn_code_upsampled.clone();
-
-            let fft_fw = fft_planner.plan_fft_forward(prn_code_upsampled.len());
-            fft_fw.process(&mut prn_code_upsampled);
-
-            self.prn_code_fft_map.insert(prn, prn_code_upsampled); // fft done
+            self.add_upscale_code(prn);
+        }
+        for prn in 120..158 + 1 {
+            // SBAS
+            self.add_upscale_code(prn);
         }
     }
 
@@ -89,24 +60,52 @@ impl Code {
         self.prn_code_fft_map.get(&prn_usize).unwrap().clone()
     }
 
-    fn gen_code(prn: usize) -> Vec<u8> {
-        let mut g1 = [1u8; 10];
-        let mut g2 = [1u8; 10];
+    pub fn gen_code(prn: usize) -> Vec<u8> {
+        const G2_DELAY: [usize; 210] = [
+            5, 6, 7, 8, 17, 18, 139, 140, 141, 251, /*   1- 10 */
+            252, 254, 255, 256, 257, 258, 469, 470, 471, 472, /*  11- 20 */
+            473, 474, 509, 512, 513, 514, 515, 516, 859, 860, /*  21- 30 */
+            861, 862, 863, 950, 947, 948, 950, 67, 103, 91, /*  31- 40 */
+            19, 679, 225, 625, 946, 638, 161, 1001, 554, 280, /*  41- 50 */
+            710, 709, 775, 864, 558, 220, 397, 55, 898, 759, /*  51- 60 */
+            367, 299, 1018, 729, 695, 780, 801, 788, 732, 34, /*  61- 70 */
+            320, 327, 389, 407, 525, 405, 221, 761, 260, 326, /*  71- 80 */
+            955, 653, 699, 422, 188, 438, 959, 539, 879, 677, /*  81- 90 */
+            586, 153, 792, 814, 446, 264, 1015, 278, 536, 819, /*  91-100 */
+            156, 957, 159, 712, 885, 461, 248, 713, 126, 807, /* 101-110 */
+            279, 122, 197, 693, 632, 771, 467, 647, 203, 145, /* 111-120 */
+            175, 52, 21, 237, 235, 886, 657, 634, 762, 355, /* 121-130 */
+            1012, 176, 603, 130, 359, 595, 68, 386, 797, 456, /* 131-140 */
+            499, 883, 307, 127, 211, 121, 118, 163, 628, 853, /* 141-150 */
+            484, 289, 811, 202, 1021, 463, 568, 904, 670, 230, /* 151-160 */
+            911, 684, 309, 644, 932, 12, 314, 891, 212, 185, /* 161-170 */
+            675, 503, 150, 395, 345, 846, 798, 992, 357, 995, /* 171-180 */
+            877, 112, 144, 476, 193, 109, 445, 291, 87, 399, /* 181-190 */
+            292, 901, 339, 208, 711, 189, 263, 537, 663, 942, /* 191-200 */
+            173, 900, 30, 500, 935, 556, 373, 85, 652, 310, /* 201-210 */
+        ];
+        let mut g1 = [0i8; PRN_CODE_LEN];
+        let mut g2 = [0i8; PRN_CODE_LEN];
+        let mut r1 = [-1i8; 10];
+        let mut r2 = [-1i8; 10];
         let mut g = vec![];
-
-        for _i in 0..PRN_CODE_LEN {
-            let p = PRN_TO_G2_TAP.get(prn - 1).unwrap();
-            let v = (g1[9] + g2.get(p.0 - 1).unwrap() + g2.get(p.1 - 1).unwrap()) % 2;
-            g.push(v);
-
-            let v = G1_TAP.iter().map(|&x| g1[x]).sum::<u8>() % 2;
-            g1[9] = v;
-            g1.rotate_right(1);
-
-            let v = G2_TAP.iter().map(|&x| g2[x]).sum::<u8>() % 2;
-            g2[9] = v;
-            g2.rotate_right(1);
+        for i in 0..PRN_CODE_LEN {
+            g1[i] = r1[9];
+            g2[i] = r2[9];
+            let c1 = r1[2] * r1[9];
+            let c2 = r2[1] * r2[2] * r2[5] * r2[7] * r2[8] * r2[9];
+            r1.rotate_right(1);
+            r2.rotate_right(1);
+            r1[0] = c1;
+            r2[0] = c2;
         }
+        let mut j = PRN_CODE_LEN - G2_DELAY[prn - 1];
+        for i in 0..PRN_CODE_LEN {
+            let v = -g1[i] * g2[j % PRN_CODE_LEN];
+            g.push(if v >= 0 { 1 } else { 0 });
+            j += 1;
+        }
+
         g
     }
 
