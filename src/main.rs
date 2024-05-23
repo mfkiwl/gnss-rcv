@@ -2,6 +2,8 @@ use chrono::Local;
 use colored::Colorize;
 use coredump::register_panic_handler;
 use gnss_rcv::plots::plot_remove_old_graph;
+use gnss_rs::constellation::Constellation;
+use gnss_rs::sv::SV;
 use log::LevelFilter;
 use std::fs::File;
 use std::io::Write;
@@ -88,8 +90,8 @@ fn main() -> std::io::Result<()> {
     }
 
     init_logging(&opt.log_file);
-
     init_ctrl_c(exit_req.clone());
+    plot_remove_old_graph();
 
     log::warn!(
         "gnss-rs: sampling: {} fi: {} off_msec={} num_msec={}",
@@ -99,27 +101,26 @@ fn main() -> std::io::Result<()> {
         opt.num_msec,
     );
 
-    let mut sat_vec: Vec<u8> = vec![];
+    let mut sat_vec: Vec<SV> = vec![];
     if !opt.sats.is_empty() {
         for s in opt.sats.split(',') {
-            sat_vec.push(u8::from_str_radix(s, 10).unwrap());
+            let prn = u8::from_str_radix(s, 10).unwrap();
+            sat_vec.push(SV::new(Constellation::GPS, prn));
         }
     } else {
         for id in 0..NUM_GPS_SATS as u8 {
-            sat_vec.push(id + 1);
+            sat_vec.push(SV::new(Constellation::GPS, id + 1));
         }
         let use_sbas = false;
         if use_sbas {
             for id in 120..158 + 1 as u8 {
-                sat_vec.push(id);
+                sat_vec.push(SV::new(Constellation::GPS, id));
             }
         }
     }
 
-    plot_remove_old_graph();
-    let gold_code = Code::new();
     let recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
-    let mut receiver = Receiver::new(gold_code, recording, opt.fs, opt.fi, opt.off_msec);
+    let mut receiver = Receiver::new(recording, opt.fs, opt.fi, opt.off_msec);
 
     receiver.init(sat_vec);
     let mut n = 0;

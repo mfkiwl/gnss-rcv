@@ -22,6 +22,20 @@ pub fn plot_remove_old_graph() {
     }
 }
 
+pub fn plot_remove(sv: SV) {
+    let pattern = format!("{}/sat-{}-*.png", PLOT_FOLDER, sv.prn);
+
+    for path in glob(&pattern).unwrap() {
+        match path {
+            Ok(path) => {
+                log::info!("Removing chart: {:?}", path.display());
+                std::fs::remove_file(path).unwrap();
+            }
+            Err(e) => println!("{:?}", e),
+        }
+    }
+}
+
 pub fn plot_time_graph(sv: SV, name: &str, time_series: &[f64], y_delta: f64, color: &RGBColor) {
     let file_name = format!("{}/sat-{}-{}.png", PLOT_FOLDER, sv.prn, name);
     let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();

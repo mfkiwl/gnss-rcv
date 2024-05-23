@@ -1,10 +1,8 @@
-use gnss_rs::constellation::Constellation;
 use gnss_rs::sv::SV;
 use gnss_rtk::prelude::{
     AprioriPosition, Candidate, Config, Epoch, InterpolationResult, IonosphereBias, Method,
     PVTSolutionType, Solver, TroposphereBias, Vector3,
 };
-//use gnss_rtk::{Config, Error, Filter, Method, PVTSolutionType, Position, Solver, Vector3};
 
 use gnss_rtk::prelude::Filter;
 use rayon::prelude::*;
@@ -21,14 +19,14 @@ use crate::types::IQSample;
 use crate::util::get_num_samples_per_msec;
 
 pub struct Receiver {
-    gold_code: Code,
+    code: Code,
     pub recording: IQRecording,
     fs: f64,
     fi: f64,
     off_samples: usize,
     cached_iq_vec: Vec<Complex64>,
     cached_ts_sec_tail: f64,
-    channels: HashMap<u8, Channel>,
+    channels: HashMap<SV, Channel>,
     last_fix_sec: Instant,
 }
 
@@ -37,32 +35,24 @@ impl Drop for Receiver {
 }
 
 impl Receiver {
-    pub fn new(gold_code: Code, recording: IQRecording, fs: f64, fi: f64, off_msec: usize) -> Self {
+    pub fn new(recording: IQRecording, fs: f64, fi: f64, off_msec: usize) -> Self {
         Self {
-            gold_code,
+            code: Code::new(),
             recording,
             fs,
             fi,
             off_samples: off_msec * get_num_samples_per_msec(),
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_ts_sec_tail: 0.0,
-            channels: HashMap::<u8, Channel>::new(),
+            channels: HashMap::<SV, Channel>::new(),
             last_fix_sec: Instant::now(),
         }
     }
 
-    pub fn init(&mut self, sat_vec: Vec<u8>) {
-        for prn in sat_vec {
-            self.channels.insert(
-                prn,
-                Channel::new(
-                    Constellation::GPS,
-                    prn as u8,
-                    &mut self.gold_code,
-                    self.fs,
-                    self.fi,
-                ),
-            );
+    pub fn init(&mut self, sat_vec: Vec<SV>) {
+        for sv in sat_vec {
+            self.channels
+                .insert(sv, Channel::new(sv, &mut self.code, self.fs, self.fi));
         }
     }
 
@@ -133,6 +123,7 @@ impl Receiver {
 
         let epoch = Epoch::from_str("2020-06-25T12:00:00 GPST").unwrap();
         let pool: Vec<Candidate> = vec![]; // XXX
+
         let (tropo_bias, iono_bias) = self.get_tropo_iono_bias();
         let mut solver = Solver::new(&cfg, initial, Self::sv_interpolator).expect("Solver issue");
         let solutions = solver.resolve(epoch, &pool, &iono_bias, &tropo_bias);

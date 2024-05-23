@@ -1,5 +1,4 @@
 use colored::Colorize;
-use gnss_rs::constellation::Constellation;
 use gnss_rs::sv::SV;
 use plotters::prelude::*;
 use rustfft::num_complex::Complex64;
@@ -14,6 +13,7 @@ use crate::constants::L1CA_HZ;
 use crate::constants::PRN_CODE_LEN;
 use crate::navigation::Navigation;
 use crate::plots::plot_iq_scatter;
+use crate::plots::plot_remove;
 use crate::plots::plot_time_graph;
 use crate::util::calc_correlation;
 use crate::util::doppler_shift;
@@ -95,12 +95,12 @@ impl Drop for Channel {
 }
 
 impl Channel {
-    pub fn new(constellation: Constellation, prn: u8, code: &mut Code, fs: f64, fi: f64) -> Self {
+    pub fn new(sv: SV, code: &mut Code, fs: f64, fi: f64) -> Self {
         Self {
-            sv: SV::new(constellation, prn),
+            sv,
             fft_planner: FftPlanner::new(),
-            prn_code: code.get_prn_code_upsampled_complex(prn),
-            prn_code_fft: code.get_prn_code_fft(prn),
+            prn_code: code.get_prn_code_upsampled_complex(sv.prn),
+            prn_code_fft: code.get_prn_code_fft(sv.prn),
             ts_sec: 0.0,
 
             fc: L1CA_HZ,
@@ -310,6 +310,7 @@ impl Channel {
             if cn0 >= CN0_THRESHOLD_LOCKED {
                 self.tracking_start(doppler_hz, cn0, code_off_sec, idx_peak);
             } else {
+                plot_remove(self.sv);
                 self.idle_start();
             }
             self.acquisition_init();
