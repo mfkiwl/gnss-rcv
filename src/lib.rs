@@ -1,6 +1,5 @@
 pub mod channel;
 pub mod code;
-pub mod constants;
 pub mod navigation;
 pub mod plots;
 pub mod receiver;
