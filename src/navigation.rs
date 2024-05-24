@@ -34,46 +34,40 @@ impl Default for SyncState {
 }
 
 #[derive(Default)]
-struct Ephemeris {
-    update: bool,
-    tow: u32,
-    tlm: u32,
+pub struct Ephemeris {
+    pub update: bool,
+    pub tow: u32,
+    pub tlm: u32,
 
-    iode: u32, // Issue of Data, Ephemeris
-    iodc: u32, // Issue of Data, Clock
-    sva: u32,  // SV accuracy (URA index)
-    svh: u32,  // SV health (0:ok)
-    week: u32, // GPS/QZS: gps week, GAL: galileo week
-    code: u32, // GPS/QZS: code on L2, GAL/CMP: data sources
-    flag: u32, // GPS/QZS: L2 P data flag, CMP: nav type
-    tgd: f64,  // GPS: Estimated Group Delay Differential
-    f0: f64,
-    f1: f64,
-    f2: f64, // SV clock parameters (af0,af1,af2)
-    omg0: f64,
-    omgd: f64,
-    omg: f64,
-    cic: f64, // Amplitude of the Cosine Harmonic Correction Term to the Angle of Inclination
-    cis: f64, // Amplitude of the Sine   Harmonic Correction Term to the Angle of Inclination
-    crc: f64, // Amplitude of the Cosine Harmonic Correction Term to the Orbit Radius
-    crs: f64, // Amplitude of the Sine   Harmonic Correction Term to the Orbit Radius
-    cuc: f64, // Amplitude of the Cosine Harmonic Correction Term to the Argument of Latitude
-    cus: f64, // Amplitude of the Sine   Harmonic Correction Term to the Argument of Latitude
-    idot: f64, // Rate of Inclination Angle
-    i0: f64,  // Inclination Angle at Reference Time
-    m0: f64,  // Mean Anomaly at Reference Time
-    a: f64,   // semi major axis
-    e: f64,   // Eccentricity
-    deln: f64, // Mean Motion Difference From Computed Value
-    toes: f64, // Reference Time Ephemeris
-    fit: f64, // fit interval (h)
-    toc: f64,
-    /*
-    gtime_t toe,toc,ttr; /* Toe,Toc,T_trans */
-                        /* SV orbit parameters */
-    double A,e,i0,OMG0,omg,M0,deln,OMGd,idot;
-
-                        */
+    pub iode: u32, // Issue of Data, Ephemeris
+    pub iodc: u32, // Issue of Data, Clock
+    pub sva: u32,  // SV accuracy (URA index)
+    pub svh: u32,  // SV health (0:ok)
+    pub week: u32, // GPS/QZS: gps week, GAL: galileo week
+    pub code: u32, // GPS/QZS: code on L2, GAL/CMP: data sources
+    pub flag: u32, // GPS/QZS: L2 P data flag, CMP: nav type
+    pub tgd: f64,  // GPS: Estimated Group Delay Differential
+    pub f0: f64,
+    pub f1: f64,
+    pub f2: f64,   // SV clock parameters (af0,af1,af2)
+    pub omg0: f64, // Longitude of Ascending Node of Orbit Plane at Weekly Epoch
+    pub omgd: f64, // Rate of Right Ascension
+    pub omg: f64,  // Argument of Perigee
+    pub cic: f64,  // Amplitude of the Cosine Harmonic Correction Term to the Angle of Inclination
+    pub cis: f64,  // Amplitude of the Sine   Harmonic Correction Term to the Angle of Inclination
+    pub crc: f64,  // Amplitude of the Cosine Harmonic Correction Term to the Orbit Radius
+    pub crs: f64,  // Amplitude of the Sine   Harmonic Correction Term to the Orbit Radius
+    pub cuc: f64,  // Amplitude of the Cosine Harmonic Correction Term to the Argument of Latitude
+    pub cus: f64,  // Amplitude of the Sine   Harmonic Correction Term to the Argument of Latitude
+    pub idot: f64, // Rate of Inclination Angle
+    pub i0: f64,   // Inclination Angle at Reference Time
+    pub m0: f64,   // Mean Anomaly at Reference Time
+    pub a: f64,    // semi major axis
+    pub ecc: f64,  // Eccentricity
+    pub deln: f64, // Mean Motion Difference From Computed Value
+    pub toes: f64, // Reference Time Ephemeris
+    pub fit: f64,  // fit interval (h)
+    pub toc: f64,
 }
 
 #[derive(Default)]
@@ -89,7 +83,7 @@ pub struct Navigation {
     time_data_sec: f64,
     count_ok: usize,
     count_err: usize,
-    eph: Ephemeris,
+    pub eph: Ephemeris,
 }
 
 impl Navigation {
@@ -225,7 +219,7 @@ impl Channel {
         self.nav.eph.crs = getbits(buf, 68, 16) as f64 * P2_5;
         self.nav.eph.deln = getbits(buf, 90, 16) as f64 * P2_43 * SC2RAD;
         self.nav.eph.m0 = getbits2(buf, 106, 8, 120, 24) as f64 * P2_31 * SC2RAD;
-        self.nav.eph.e = getbitu2(buf, 166, 8, 180, 24) as f64 * P2_33;
+        self.nav.eph.ecc = getbitu2(buf, 166, 8, 180, 24) as f64 * P2_33;
         self.nav.eph.cuc = getbits(buf, 150, 16) as f64 * P2_29;
         self.nav.eph.cus = getbits(buf, 210, 16) as f64 * P2_29;
         let sqrt_a = getbitu2(buf, 226, 8, 240, 24) as f64 * P2_19;
