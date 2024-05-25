@@ -33,7 +33,7 @@ impl Default for SyncState {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct Ephemeris {
     pub update: bool,
     pub tow: u32,

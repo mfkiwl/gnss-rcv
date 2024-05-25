@@ -1,19 +1,27 @@
 use gnss_rs::sv::SV;
 use gnss_rtk::prelude::{
-    AprioriPosition, Candidate, Config, Epoch, InterpolationResult, IonosphereBias, Method,
-    PVTSolutionType, Solver, TroposphereBias, Vector3,
+    AprioriPosition, Candidate, Carrier, Config, Epoch, InterpolationResult, IonosphereBias,
+    Method, Observation, Solver, TroposphereBias, Vector3,
 };
 
-use gnss_rtk::prelude::Filter;
+use colored::Colorize;
+use gnss_rtk::prelude::Duration;
+
 use rayon::prelude::*;
 use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use crate::channel::Channel;
+use crate::navigation::Ephemeris;
 use crate::recording::IQRecording;
 use crate::types::IQSample;
+
+lazy_static! {
+    static ref EPHEMERIS_MAP: Mutex<HashMap<u8, Ephemeris>> = Mutex::new(HashMap::new());
+}
 
 const PERIOD_RCV: f64 = 0.001;
 
@@ -84,13 +92,7 @@ impl Receiver {
         })
     }
 
-    fn sv_interpolator(t: Epoch, sv: SV, size: usize) -> Option<InterpolationResult> {
-        log::warn!("{sv}: sv_interpolator for {t} sz={size}");
-
-        None
-    }
-
-    fn get_tropo_iono_bias(&mut self) -> (TroposphereBias, IonosphereBias) {
+    fn get_tropo_iono_bias() -> (TroposphereBias, IonosphereBias) {
         let iono_bias = IonosphereBias {
             kb_model: None,
             bd_model: None,
@@ -104,44 +106,44 @@ impl Receiver {
         (tropo_bias, iono_bias)
     }
 
-    fn get_eccentric_anomaly(&self, channel: &Channel, time_from_ephemeris_ref_t: f64) -> f64 {
+    fn get_eccentric_anomaly(eph: &Ephemeris, time_from_ephemeris_ref_t: f64) -> f64 {
         let earth_gravitational_constant = 3.986004418e14;
 
-        let computed_mean_motion = earth_gravitational_constant / channel.nav.eph.a.powf(1.5);
-        let corrected_mean_motion = computed_mean_motion + channel.nav.eph.deln;
-        let mean_anomaly_at_reference_time = channel.nav.eph.m0;
+        let computed_mean_motion = earth_gravitational_constant / eph.a.powf(1.5);
+        let corrected_mean_motion = computed_mean_motion + eph.deln;
+        let mean_anomaly_at_reference_time = eph.m0;
         let mean_anomaly_now =
             mean_anomaly_at_reference_time + corrected_mean_motion * time_from_ephemeris_ref_t;
 
         let mut eccentric_anomaly_now_estimation = mean_anomaly_now;
         for _i in 0..7 {
             eccentric_anomaly_now_estimation =
-                mean_anomaly_now + (channel.nav.eph.ecc * eccentric_anomaly_now_estimation.sin())
+                mean_anomaly_now + (eph.ecc * eccentric_anomaly_now_estimation.sin())
         }
 
         eccentric_anomaly_now_estimation
     }
 
-    fn compute_sv_position_ecef(&self, prn: &u8, channel: &Channel, gps_time: f64) -> [f64; 3] {
+    fn compute_sv_position_ecef(eph: &Ephemeris, gps_time: f64) -> [f64; 3] {
         const EARTH_ROTATION_RATE: f64 = 7.2921151467e-5;
-        let cuc = channel.nav.eph.cuc;
-        let cus = channel.nav.eph.cus;
-        let crc = channel.nav.eph.crc;
-        let crs = channel.nav.eph.crs;
-        let cic = channel.nav.eph.cic;
-        let cis = channel.nav.eph.cis;
-        let ecc = channel.nav.eph.ecc;
-        let i0 = channel.nav.eph.i0;
-        let idot = channel.nav.eph.idot;
-        let a = channel.nav.eph.a;
-        let omg = channel.nav.eph.omg;
-        let omgd = channel.nav.eph.omgd;
-        let omg0 = channel.nav.eph.omg0;
-        let toes = channel.nav.eph.toes;
+        let cuc = eph.cuc;
+        let cus = eph.cus;
+        let crc = eph.crc;
+        let crs = eph.crs;
+        let cic = eph.cic;
+        let cis = eph.cis;
+        let ecc = eph.ecc;
+        let i0 = eph.i0;
+        let idot = eph.idot;
+        let a = eph.a;
+        let omg = eph.omg;
+        let omgd = eph.omgd;
+        let omg0 = eph.omg0;
+        let toes = eph.toes;
 
-        let time_from_eph_t = gps_time - channel.nav.eph.toes;
+        let time_from_eph_t = gps_time - eph.toes;
 
-        let ecc_anomaly = self.get_eccentric_anomaly(channel, time_from_eph_t);
+        let ecc_anomaly = Self::get_eccentric_anomaly(eph, time_from_eph_t);
         let true_anomaly =
             ((1.0 - (ecc * ecc)).sqrt() * ecc_anomaly.sin()).atan2(ecc_anomaly.cos() - ecc);
 
@@ -173,33 +175,74 @@ impl Receiver {
         [ecef_x, ecef_y, ecef_z]
     }
 
-    fn compute_fix(&mut self, ts_sec: f64) {
+    fn sv_interpolator(t: Epoch, sv: SV, size: usize) -> Option<InterpolationResult> {
+        log::warn!("{sv}: sv_interpolator for {t} sz={size}");
+
+        let map = EPHEMERIS_MAP.lock().unwrap();
+        let eph = map.get(&sv.prn).unwrap();
+        let pos = Self::compute_sv_position_ecef(eph, t.to_gpst_seconds());
+
+        Some(InterpolationResult::from_apc_position((
+            pos[0], pos[1], pos[2],
+        )))
+    }
+
+    fn compute_fix(&mut self) {
         if self.last_fix_sec.elapsed().as_secs_f32() < 2.0 {
             return;
         }
-        log::warn!("t={:.3} -- attempting fix", ts_sec);
+        log::warn!(
+            "t={:.3} -- {}",
+            self.cached_ts_sec_tail,
+            format!("attempting fix").red()
+        );
 
         // somewhere in the middle of Lake Leman
         let initial = AprioriPosition::from_geo(Vector3::new(46.5, 6.6, 0.0));
-
-        let mut cfg = Config::static_preset(Method::SPP);
-
-        cfg.min_snr = None;
-        cfg.min_sv_elev = None;
-        cfg.solver.filter = Filter::LSQ;
-        cfg.sol_type = PVTSolutionType::PositionVelocityTime;
+        let cfg = Config::static_preset(Method::SPP);
 
         let gps_time = Epoch::from_str("2020-06-25T12:00:00 GPST").unwrap();
-        let pool: Vec<Candidate> = vec![]; // XXX
-        for (sv, channel) in &self.channels {
-            if channel.num_tracking_samples < 1000 {
-                continue;
+        let mut pool: Vec<Candidate> = vec![]; // XXX
+        let mut max_tow = 3600 * 24 * 7;
+
+        {
+            let mut map = EPHEMERIS_MAP.lock().unwrap();
+            map.clear();
+
+            for (sv, channel) in &self.channels {
+                if channel.nav.eph.tow != 0 && channel.nav.eph.tow < max_tow {
+                    max_tow = channel.nav.eph.tow;
+                    log::warn!("best: {}: tow={max_tow}", sv.prn);
+                }
+
+                map.insert(sv.prn, channel.nav.eph);
+                let candidate = Candidate::new(
+                    SV::new(gnss_rs::constellation::Constellation::GPS, sv.prn),
+                    Epoch::from_str("2020-06-25T12:00:00 GPST").unwrap(),
+                    Duration::from_seconds(0.162520179759E-04),
+                    Some(Duration::from_nanoseconds(10.0)),
+                    vec![Observation {
+                        carrier: Carrier::L1,
+                        value: 1.0E6_f64,
+                        snr: None,
+                    }],
+                    vec![Observation {
+                        carrier: Carrier::L1,
+                        value: channel.trk.doppler_hz,
+                        snr: None,
+                    }],
+                    vec![Observation {
+                        carrier: Carrier::L1,
+                        value: channel.trk.doppler_hz,
+                        snr: None,
+                    }],
+                );
+
+                pool.push(candidate);
             }
-            let pos_ecef =
-                self.compute_sv_position_ecef(&sv.prn, &channel, gps_time.to_gst_seconds());
         }
 
-        let (tropo_bias, iono_bias) = self.get_tropo_iono_bias();
+        let (tropo_bias, iono_bias) = Self::get_tropo_iono_bias();
         let mut solver = Solver::new(&cfg, initial, Self::sv_interpolator).expect("Solver issue");
         let solutions = solver.resolve(gps_time, &pool, &iono_bias, &tropo_bias);
         if solutions.is_ok() {
@@ -218,7 +261,7 @@ impl Receiver {
             .par_iter_mut()
             .for_each(|(_id, sat)| sat.process_samples(&samples.iq_vec, samples.ts_sec));
 
-        self.compute_fix(samples.ts_sec);
+        self.compute_fix();
 
         Ok(())
     }

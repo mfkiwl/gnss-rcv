@@ -40,11 +40,11 @@ enum TrackState {
 }
 
 #[derive(Default)]
-struct Tracking {
+pub struct Tracking {
     prn_code: Vec<Complex64>, // upsampled
-    doppler_hz: f64,
-    code_off_sec: f64,
-    cn0: f64,
+    pub doppler_hz: f64,
+    pub code_off_sec: f64,
+    pub cn0: f64,
     adr: f64,
     phi: f64,
     err_phase: f64,
@@ -89,7 +89,7 @@ pub struct Channel {
 
     pub hist: History,
     pub nav: Navigation,
-    trk: Tracking,
+    pub trk: Tracking,
     acq: Acquisition,
 }
 
