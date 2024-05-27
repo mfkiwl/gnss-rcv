@@ -37,6 +37,8 @@ impl Default for SyncState {
 pub struct Ephemeris {
     pub update: bool,
     pub tow: u32,
+    pub ts_sec: f64, // for 1st subframe
+    pub ts_gpst: Epoch,
     pub tlm: u32,
 
     pub iode: u32, // Issue of Data, Ephemeris
@@ -139,13 +141,13 @@ impl Channel {
         if bmatch_n(preambule, &bits[0..preambule_len])
             && bmatch_n(preambule, &bits[300..300 + preambule_len])
         {
-            log::warn!("{}: FRAME SYNC (N): ts={:.3}", self.sv, self.ts_sec);
+            log::info!("{}: FRAME SYNC (N): ts={:.3}", self.sv, self.ts_sec);
             return SyncState::NORMAL;
         }
         if bmatch_r(preambule, &bits[0..preambule_len])
             && bmatch_r(preambule, &bits[0..preambule_len])
         {
-            log::warn!("{}: FRAME SYNC (R): ts={:.3}", self.sv, self.ts_sec);
+            log::info!("{}: FRAME SYNC (R): ts={:.3}", self.sv, self.ts_sec);
             return SyncState::REVERSED;
         }
 
@@ -169,7 +171,7 @@ impl Channel {
 
             if p.abs() >= THRESHOLD_SYNC {
                 self.nav.ssync = self.num_tracking_samples - n;
-                log::warn!("{}: SYNC: p={:.5} ssync={}", self.sv, p, self.nav.ssync);
+                log::info!("{}: SYNC: p={:.5} ssync={}", self.sv, p, self.nav.ssync);
             }
         } else if (self.num_tracking_samples - self.nav.ssync) % num == 0 {
             let p = self.nav_mean_ip(num);
@@ -180,7 +182,7 @@ impl Channel {
             } else {
                 self.nav.ssync = 0;
                 self.nav.sync_state = SyncState::NORMAL;
-                log::warn!("{}: SYNC {} p={}", self.sv, format!("LOST").red(), p)
+                log::info!("{}: SYNC {} p={}", self.sv, format!("LOST").red(), p)
             }
         }
         false
@@ -202,12 +204,6 @@ impl Channel {
         self.nav.eph.f2 = getbits(buf, 240, 8) as f64 * P2_55;
         self.nav.eph.f1 = getbits(buf, 248, 16) as f64 * P2_43;
         self.nav.eph.f0 = getbits(buf, 270, 22) as f64 * P2_31;
-
-        let week_to_secs = self.nav.eph.week * 7 * 24 * 60 * 60;
-        let secs_gpst = week_to_secs + self.nav.eph.tow;
-
-        let t = Epoch::from_gpst_seconds(secs_gpst as f64);
-        log::warn!("{}: ---- {}", self.sv, t);
     }
 
     fn nav_decode_lnav_subframe2(&mut self) {
@@ -287,6 +283,17 @@ impl Channel {
             4 => self.nav_decode_lnav_subframe4(),
             5 => self.nav_decode_lnav_subframe5(),
             _ => log::warn!("{}: invalid subframe id={subframe_id}", self.sv),
+        }
+        if self.nav.eph.week != 0 {
+            self.nav.eph.ts_sec = self.ts_sec;
+            let secs_gpst = self.nav.eph.week * 7 * 24 * 60 * 60 + self.nav.eph.tow;
+            self.nav.eph.ts_gpst = Epoch::from_gpst_seconds(secs_gpst.into());
+            log::warn!(
+                "{}: ---- {} tgd={}",
+                self.sv,
+                self.nav.eph.ts_gpst,
+                self.nav.eph.tgd
+            );
         }
         subframe_id
     }

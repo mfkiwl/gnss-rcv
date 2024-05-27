@@ -999,7 +999,6 @@ dependencies = [
  "glob",
  "gnss-rs",
  "gnss-rtk",
- "lazy_static",
  "log",
  "plotters",
  "rayon",
