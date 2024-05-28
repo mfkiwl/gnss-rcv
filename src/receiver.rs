@@ -122,7 +122,9 @@ impl Receiver {
 
     fn compute_sv_position_ecef(sv: SV, eph: &Ephemeris, gps_time: f64) -> [f64; 3] {
         const EARTH_ROTATION_RATE: f64 = 7.2921151467e-5;
-        let mut time_from_eph_t = gps_time - eph.toes;
+        let mut time_from_eph_t = gps_time - eph.toe_gpst.to_gpst_seconds();
+
+        log::warn!("{sv}: delta-t={time_from_eph_t} toe={}", eph.toe_gpst);
 
         if time_from_eph_t > 302400.0 {
             time_from_eph_t -= 604800.0;
@@ -151,7 +153,7 @@ impl Receiver {
         let orb_plane_y = rk * uk.sin();
 
         let omega_at_ref_time = eph.omg0 + (eph.omgd - EARTH_ROTATION_RATE) * time_from_eph_t
-            - EARTH_ROTATION_RATE * eph.toes;
+            - EARTH_ROTATION_RATE * eph.toe;
 
         let ecef_x = orb_plane_x * omega_at_ref_time.cos()
             - orb_plane_y * ik.cos() * omega_at_ref_time.sin();
@@ -185,20 +187,16 @@ impl Receiver {
         let cfg = Config::static_preset(Method::SPP);
 
         let mut pool: Vec<Candidate> = vec![]; // XXX
-        let mut num_subframe1_rcvd = 0;
+        let mut num_eph_complete = 0;
 
-        // find most distant sat: lowest tow
         for (_sv, channel) in &self.channels {
             if channel.trk.cn0 > 35.0 && channel.nav.eph.ts_sec != 0.0 {
-                num_subframe1_rcvd += 1;
+                num_eph_complete += 1;
             }
         }
 
-        if num_subframe1_rcvd < 4 {
-            log::warn!(
-                "only {} sats with appropriate ephemeris",
-                num_subframe1_rcvd
-            );
+        if num_eph_complete < 4 {
+            log::warn!("only {num_eph_complete} sats with appropriate ephemeris");
             self.last_fix_sec = Instant::now();
             return;
         }
@@ -223,7 +221,7 @@ impl Receiver {
         let mut ts_ref = f64::MAX;
 
         for (sv, channel) in &self.channels {
-            if channel.trk.cn0 < 35.0 || channel.nav.eph.week == 0 || channel.nav.eph.toes == 0.0 {
+            if channel.trk.cn0 < 35.0 || channel.nav.eph.week == 0 || channel.nav.eph.toe == 0.0 {
                 continue;
             }
 
@@ -237,7 +235,7 @@ impl Receiver {
         }
 
         for (sv, channel) in &self.channels {
-            if channel.trk.cn0 < 35.0 || channel.nav.eph.week == 0 || channel.nav.eph.toes == 0.0 {
+            if channel.trk.cn0 < 35.0 || channel.nav.eph.week == 0 || channel.nav.eph.toe == 0.0 {
                 continue;
             }
             const BASE_DELAY: f64 = 68.802e-3;
@@ -269,14 +267,14 @@ impl Receiver {
 
         let (tropo_bias, iono_bias) = Self::get_tropo_iono_bias();
         let ts_solve = Epoch::from_gpst_seconds(ts_ref);
-        let fun = |t: Epoch, sv: SV, _size: usize| {
+        let sv_interp = |t: Epoch, sv: SV, _size: usize| {
             let ch = self.channels.get(&sv).unwrap();
             let pos = Self::compute_sv_position_ecef(sv, &ch.nav.eph, t.to_gpst_seconds());
 
             Some(InterpolationResult::from_apc_position(pos.into()))
         };
-        //let mut solver = Solver::new(&cfg, initial, Self::sv_interpolator).expect("Solver issue");
-        let mut solver = Solver::new(&cfg, initial, fun).expect("Solver issue");
+
+        let mut solver = Solver::new(&cfg, initial, sv_interp).expect("Solver issue");
         let solutions = solver.resolve(ts_solve, &pool, &iono_bias, &tropo_bias);
         if solutions.is_ok() {
             log::warn!("got a fix: {:?}", solutions)

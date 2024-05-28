@@ -26,7 +26,7 @@ struct Options {
     #[structopt(
         short = "f",
         long,
-        default_value = "resources/nov_3_time_18_48_st_ives"
+        default_value = "resources/nov_3_time_18_48_st_ives_2xf32"
     )]
     file: PathBuf,
     #[structopt(short = "l", long, default_value = "")]

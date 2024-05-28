@@ -16,7 +16,7 @@ use crate::types::IQSample;
 pub enum IQFileType {
     TypePairFloat32,
     TypePairInt16,
-    TypePairInt8,
+    TypeRtlSdr,
     TypeOneInt8,
 }
 
@@ -26,7 +26,7 @@ impl FromStr for IQFileType {
         match input {
             "2xf32" => Ok(IQFileType::TypePairFloat32),
             "2xi16" => Ok(IQFileType::TypePairInt16),
-            "2xi8" => Ok(IQFileType::TypePairInt8),
+            "rtlsdr" => Ok(IQFileType::TypeRtlSdr),
             "i8" => Ok(IQFileType::TypeOneInt8),
             _ => Err(format!("Failed to parse {}", input).into()),
         }
@@ -38,7 +38,7 @@ impl fmt::Display for IQFileType {
         match *self {
             IQFileType::TypePairFloat32 => write!(f, "2xf32"),
             IQFileType::TypePairInt16 => write!(f, "2xi16"),
-            IQFileType::TypePairInt8 => write!(f, "2xi8"),
+            IQFileType::TypeRtlSdr => write!(f, "rtlsdr"),
             IQFileType::TypeOneInt8 => write!(f, "i8"),
         }
     }
@@ -71,7 +71,7 @@ impl IQRecording {
 
     fn get_sample_size_bytes(file_type: &IQFileType) -> usize {
         match file_type {
-            IQFileType::TypePairInt8 => 2 * 1,
+            IQFileType::TypeRtlSdr => 2 * 1,
             IQFileType::TypeOneInt8 => 1,
             IQFileType::TypePairInt16 => 2 * 2,
             IQFileType::TypePairFloat32 => 2 * 4,
@@ -109,11 +109,11 @@ impl IQRecording {
             }
 
             match self.file_type {
-                IQFileType::TypePairInt8 => {
+                IQFileType::TypeRtlSdr => {
                     for off in (0..len).step_by(2) {
                         iq_vec.push(Complex64 {
-                            re: buf[off + 0] as i8 as f64 / std::i8::MAX as f64,
-                            im: buf[off + 1] as i8 as f64 / std::i8::MAX as f64,
+                            re: (buf[off + 0] as f64 - 127.) / 128.0, // use 127.5 as offset doesn't work
+                            im: (buf[off + 1] as f64 - 127.) / 128.0,
                         });
                         n += 1;
                         if n >= num_samples {
