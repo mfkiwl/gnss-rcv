@@ -154,12 +154,12 @@ impl Receiver {
 
         let uk = phi_k + duk;
         let rk = eph.a * (1.0 - eph.ecc * ecc_anomaly.cos()) + drk;
-        let ik = eph.i0 + eph.idot * time_from_eph_t + dik;
+        let ik = eph.i0 + eph.i_dot * time_from_eph_t + dik;
 
         let orb_plane_x = rk * uk.cos();
         let orb_plane_y = rk * uk.sin();
 
-        let omega_at_ref_time = eph.omg0 + (eph.omgd - EARTH_ROTATION_RATE) * time_from_eph_t
+        let omega_at_ref_time = eph.omg0 + (eph.omg_dot - EARTH_ROTATION_RATE) * time_from_eph_t
             - EARTH_ROTATION_RATE * eph.toe as f64;
 
         let ecef_x = orb_plane_x * omega_at_ref_time.cos()

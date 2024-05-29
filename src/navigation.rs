@@ -41,35 +41,35 @@ pub struct Ephemeris {
     pub toe_gpst: Epoch, // cf toe
     pub tlm: u32,
 
-    pub iode: u32, // Issue of Data, Ephemeris
-    pub iodc: u32, // Issue of Data, Clock
-    pub sva: u32,  // SV accuracy (URA index)
-    pub svh: u32,  // SV health (0:ok)
-    pub week: u32, // GPS/QZS: gps week, GAL: galileo week
-    pub code: u32, // GPS/QZS: code on L2, GAL/CMP: data sources
-    pub flag: u32, // GPS/QZS: L2 P data flag, CMP: nav type
-    pub tgd: f64,  // GPS: Estimated Group Delay Differential
-    pub f0: f64,   // SV Clock Bias Correction Coefficient
-    pub f1: f64,   // SV Clock Drift Correction Coefficient
-    pub f2: f64,   // Drift Rate Correction Coefficient
-    pub omg: f64,  // Argument of Perigee
-    pub omg0: f64, // Longitude of Ascending Node of Orbit Plane at Weekly Epoch
-    pub omgd: f64, // Rate of Right Ascension
-    pub cic: f64,  // Amplitude of the Cosine Harmonic Correction Term to the Angle of Inclination
-    pub cis: f64,  // Amplitude of the Sine   Harmonic Correction Term to the Angle of Inclination
-    pub crc: f64,  // Amplitude of the Cosine Harmonic Correction Term to the Orbit Radius
-    pub crs: f64,  // Amplitude of the Sine   Harmonic Correction Term to the Orbit Radius
-    pub cuc: f64,  // Amplitude of the Cosine Harmonic Correction Term to the Argument of Latitude
-    pub cus: f64,  // Amplitude of the Sine   Harmonic Correction Term to the Argument of Latitude
-    pub idot: f64, // Rate of Inclination Angle
-    pub i0: f64,   // Inclination Angle at Reference Time
-    pub m0: f64,   // Mean Anomaly at Reference Time
-    pub a: f64,    // semi major axis
-    pub ecc: f64,  // Eccentricity
+    pub iode: u32,    // Issue of Data, Ephemeris
+    pub iodc: u32,    // Issue of Data, Clock
+    pub sva: u32,     // SV accuracy (URA index)
+    pub svh: u32,     // SV health (0:ok)
+    pub week: u32,    // GPS/QZS: gps week, GAL: galileo week
+    pub code: u32,    // GPS/QZS: code on L2, GAL/CMP: data sources
+    pub flag: u32,    // GPS/QZS: L2 P data flag, CMP: nav type
+    pub tgd: f64,     // GPS: Estimated Group Delay Differential
+    pub f0: f64,      // SV Clock Bias Correction Coefficient
+    pub f1: f64,      // SV Clock Drift Correction Coefficient
+    pub f2: f64,      // Drift Rate Correction Coefficient
+    pub omg: f64,     // Argument of Perigee
+    pub omg0: f64,    // Longitude of Ascending Node of Orbit Plane at Weekly Epoch
+    pub omg_dot: f64, // Rate of Right Ascension
+    pub cic: f64, // Amplitude of the Cosine Harmonic Correction Term to the Angle of Inclination
+    pub cis: f64, // Amplitude of the Sine   Harmonic Correction Term to the Angle of Inclination
+    pub crc: f64, // Amplitude of the Cosine Harmonic Correction Term to the Orbit Radius
+    pub crs: f64, // Amplitude of the Sine   Harmonic Correction Term to the Orbit Radius
+    pub cuc: f64, // Amplitude of the Cosine Harmonic Correction Term to the Argument of Latitude
+    pub cus: f64, // Amplitude of the Sine   Harmonic Correction Term to the Argument of Latitude
+    pub i_dot: f64, // Rate of Inclination Angle
+    pub i0: f64,  // Inclination Angle at Reference Time
+    pub m0: f64,  // Mean Anomaly at Reference Time
+    pub a: f64,   // semi major axis
+    pub ecc: f64, // Eccentricity
     pub deln: f64, // Mean Motion Difference From Computed Value
-    pub toc: u32,  // Time of Clock
-    pub toe: u32,  // Reference Time Ephemeris
-    pub fit: u32,  // fit interval (h)
+    pub toc: u32, // Time of Clock
+    pub toe: u32, // Reference Time Ephemeris
+    pub fit: u32, // fit interval (h)
 }
 
 #[derive(Default)]
@@ -267,9 +267,9 @@ impl Channel {
         self.nav.eph.i0 = getbits2(buf, 136, 8, 150, 24) as f64 * P2_31 * SC2RAD;
         self.nav.eph.crc = getbits(buf, 180, 16) as f64 * P2_5;
         self.nav.eph.omg = getbits2(buf, 196, 8, 210, 24) as f64 * P2_31 * SC2RAD;
-        self.nav.eph.omgd = getbits(buf, 240, 24) as f64 * P2_43 * SC2RAD;
+        self.nav.eph.omg_dot = getbits(buf, 240, 24) as f64 * P2_43 * SC2RAD;
         self.nav.eph.iode = getbitu(buf, 270, 8);
-        self.nav.eph.idot = getbits(buf, 278, 14) as f64 * P2_43 * SC2RAD;
+        self.nav.eph.i_dot = getbits(buf, 278, 14) as f64 * P2_43 * SC2RAD;
 
         log::warn!(
             "{}: subframe-3 tow={:.2} cic={:+e} cis={:+e} omg={} omg0={} omgd={:+e} i0={} idot={:+e}",
@@ -279,9 +279,9 @@ impl Channel {
             self.nav.eph.cis,
             self.nav.eph.omg,
             self.nav.eph.omg0,
-            self.nav.eph.omgd,
+            self.nav.eph.omg_dot,
             self.nav.eph.i0,
-            self.nav.eph.idot
+            self.nav.eph.i_dot
         );
     }
 
