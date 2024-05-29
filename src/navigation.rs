@@ -67,9 +67,9 @@ pub struct Ephemeris {
     pub a: f64,    // semi major axis
     pub ecc: f64,  // Eccentricity
     pub deln: f64, // Mean Motion Difference From Computed Value
-    pub toc: f64,  // Time of Clock
-    pub toe: f64,  // Reference Time Ephemeris
-    pub fit: f64,  // fit interval (h)
+    pub toc: u32,  // Time of Clock
+    pub toe: u32,  // Reference Time Ephemeris
+    pub fit: u32,  // fit interval (h)
 }
 
 #[derive(Default)]
@@ -135,8 +135,8 @@ impl Channel {
     fn nav_get_frame_sync_state(&self, preambule: &[u8]) -> SyncState {
         let bits = &self.nav.syms[SDR_MAX_NSYM - 308..];
         let preambule_len = preambule.len();
-        let bits_len = bits.len();
-        assert!(bits_len >= preambule_len);
+
+        assert!(bits.len() >= preambule_len);
 
         if bmatch_n(preambule, &bits[0..preambule_len])
             && bmatch_n(preambule, &bits[300..300 + preambule_len])
@@ -145,7 +145,7 @@ impl Channel {
             return SyncState::NORMAL;
         }
         if bmatch_r(preambule, &bits[0..preambule_len])
-            && bmatch_r(preambule, &bits[0..preambule_len])
+            && bmatch_r(preambule, &bits[300..300 + preambule_len])
         {
             log::info!("{}: FRAME SYNC (R): ts={:.3}", self.sv, self.ts_sec);
             return SyncState::REVERSED;
@@ -158,13 +158,12 @@ impl Channel {
         if self.nav.ssync == 0 {
             let n = if num <= 2 { 1 } else { 2 };
             let len = self.hist.corr_p_hist.len();
-            let mut v = vec![];
+
             let mut p = 0.0;
             for i in 0..2 * n {
                 let code = if i < n { -1.0 } else { 1.0 };
                 let corr = self.hist.corr_p_hist[len - 2 * n + i];
                 p += corr.re * code / corr.norm(); // costly!
-                v.push(corr.re / corr.norm());
             }
 
             p /= 2.0 * n as f64;
@@ -200,10 +199,23 @@ impl Channel {
         self.nav.eph.iodc = getbitu2(buf, 82, 2, 210, 8);
         self.nav.eph.flag = getbitu(buf, 90, 1);
         self.nav.eph.tgd = getbits(buf, 196, 8) as f64 * P2_31;
-        self.nav.eph.toc = getbitu(buf, 218, 16) as f64 * 16.0;
+        self.nav.eph.toc = getbitu(buf, 218, 16) * 16;
         self.nav.eph.f2 = getbits(buf, 240, 8) as f64 * P2_55;
         self.nav.eph.f1 = getbits(buf, 248, 16) as f64 * P2_43;
         self.nav.eph.f0 = getbits(buf, 270, 22) as f64 * P2_31;
+
+        log::warn!(
+            "{}: subframe-1 sva={} svh={} iodc={} tgd={:+e} toc={} a0={:+e} a1={:+e} a2={:+e}",
+            self.sv,
+            self.nav.eph.sva,
+            self.nav.eph.svh,
+            self.nav.eph.iodc,
+            self.nav.eph.tgd,
+            self.nav.eph.toc,
+            self.nav.eph.f0,
+            self.nav.eph.f1,
+            self.nav.eph.f2
+        );
     }
 
     fn nav_decode_lnav_subframe2(&mut self) {
@@ -217,13 +229,21 @@ impl Channel {
         self.nav.eph.ecc = getbitu2(buf, 166, 8, 180, 24) as f64 * P2_33;
         self.nav.eph.cuc = getbits(buf, 150, 16) as f64 * P2_29;
         self.nav.eph.cus = getbits(buf, 210, 16) as f64 * P2_29;
-        let sqrt_a = getbitu2(buf, 226, 8, 240, 24) as f64 * P2_19;
-        self.nav.eph.toe = getbitu(buf, 270, 16) as f64 * 16.0;
-        self.nav.eph.fit = getbitu(buf, 286, 1) as f64;
+        {
+            let hi = getbitu(buf, 226, 8);
+            let lo = getbitu(buf, 240, 24);
+            let v = getbitu2(buf, 226, 8, 240, 24);
+            log::warn!("hi={hi} lo={lo} -- v={v}");
+        }
+        let mut sqrt_a = getbitu2(buf, 226, 8, 240, 24) as f64;
+        log::warn!("sqrt_a={}", sqrt_a);
+        sqrt_a = sqrt_a * P2_19;
+        self.nav.eph.toe = getbitu(buf, 270, 16) * 16;
+        self.nav.eph.fit = getbitu(buf, 286, 1);
         self.nav.eph.a = sqrt_a * sqrt_a;
 
         log::warn!(
-            "{}: subframe-3 a={} iode={} crs={} crc={} cuc={} cus={} ecc={} m0={} toe={}",
+            "{}: subframe-2 a={} iode={} crs={} crc={} cuc={:+e} cus={:+e} ecc={} m0={} toe={}",
             self.sv,
             self.nav.eph.a,
             self.nav.eph.iode,
@@ -252,7 +272,7 @@ impl Channel {
         self.nav.eph.idot = getbits(buf, 278, 14) as f64 * P2_43 * SC2RAD;
 
         log::warn!(
-            "{}: subframe-3 tow={:.2} cic={} cis={} omg={} omg0={} omgd={} i0={} idot={}",
+            "{}: subframe-3 tow={:.2} cic={:+e} cis={:+e} omg={} omg0={} omgd={:+e} i0={} idot={:+e}",
             self.sv,
             self.nav.eph.tow,
             self.nav.eph.cic,
@@ -269,21 +289,23 @@ impl Channel {
         let buf = &self.nav.data[0..];
         self.nav.eph.tow = getbitu(buf, 30, 17) * 6;
         let page_id = getbitu(buf, 60, 6);
+
         log::warn!("{}: subframe-4: page: {page_id}", self.sv);
     }
     fn nav_decode_lnav_subframe5(&mut self) {
         let buf = &self.nav.data[0..];
         self.nav.eph.tow = getbitu(buf, 30, 17) * 6;
         let page_id = getbitu(buf, 60, 6);
+
         log::warn!("{}: subframe-5: page: {page_id}", self.sv);
     }
 
     fn nav_decode_lnav_subframe(&mut self) -> u32 {
-        let data = &self.nav.data[0..];
-        let subframe_id = getbitu(data, 49, 3);
-        let _alert = getbitu(data, 47, 1);
-        let _anti_spoof = getbitu(data, 48, 1);
-        self.nav.eph.tlm = getbitu(data, 8, 14);
+        let buf = &self.nav.data[0..];
+        let subframe_id = getbitu(buf, 49, 3);
+        let _alert = getbitu(buf, 47, 1);
+        let _anti_spoof = getbitu(buf, 48, 1);
+        self.nav.eph.tlm = getbitu(buf, 8, 14);
 
         match subframe_id {
             1 => self.nav_decode_lnav_subframe1(),
@@ -300,7 +322,7 @@ impl Channel {
 
             self.nav.eph.ts_gpst = Epoch::from_gpst_seconds(secs_gpst.into());
             self.nav.eph.toe_gpst =
-                Epoch::from_gpst_seconds(week_to_secs as f64 + self.nav.eph.toe);
+                Epoch::from_gpst_seconds(week_to_secs as f64 + self.nav.eph.toe as f64);
             log::warn!(
                 "{}: ---- {} tgd={} toe={}",
                 self.sv,
@@ -314,16 +336,15 @@ impl Channel {
     }
 
     fn nav_decode_lnav(&mut self, sync: SyncState) {
-        let mut buf = vec![];
+        let mut buf = [0u8; 300];
         let rev = if sync == SyncState::NORMAL { 0 } else { 1 };
         let syms_len = self.nav.syms.len();
         let syms = &self.nav.syms[syms_len - 308..syms_len - 8];
 
         for i in 0..300 {
-            buf.push(syms[i] ^ rev)
+            buf[i] = syms[i] ^ rev;
         }
 
-        let ts_sec = self.ts_sec - 20e-3 * 308.0;
         if Self::nav_test_lnav_parity(&buf[0..]) {
             log::info!("{}: PARITY OK", self.sv);
             self.nav.fsync = self.num_tracking_samples;
@@ -332,7 +353,7 @@ impl Channel {
 
             self.nav.seq = getbitu(&self.nav.data[0..], 30, 17); // tow (x 6s)
             self.nav.count_ok += 1;
-            self.nav.time_data_sec = ts_sec;
+            self.nav.time_data_sec = self.ts_sec - 20e-3 * 308.0;
 
             let id = self.nav_decode_lnav_subframe();
 
@@ -351,6 +372,7 @@ impl Channel {
         let mask = [
             0x2EC7CD2, 0x1763E69, 0x2BB1F34, 0x15D8F9A, 0x1AEC7CD, 0x22DEA27,
         ];
+        assert_eq!(syms.len(), 300);
 
         let mut data: u32 = 0;
         for i in 0..10 {
@@ -361,7 +383,7 @@ impl Channel {
                 data = data ^ 0x3FFFFFC0;
             }
             for j in 0..6 {
-                let v0: u32 = (data >> 6) & mask[j];
+                let v0 = (data >> 6) & mask[j];
                 let v1: u8 = ((data >> (5 - j)) & 1) as u8;
                 if xor_bits(v0) != v1 {
                     return false;
@@ -376,7 +398,7 @@ impl Channel {
     }
 
     pub fn nav_decode(&mut self) {
-        let preamb: Vec<u8> = [1, 0, 0, 0, 1, 0, 1, 1].to_vec();
+        let preambule: [u8; 8] = [1, 0, 0, 0, 1, 0, 1, 1];
         if self.sv.prn >= 120 && self.sv.prn <= 158 {
             self.nav_decode_sbas();
             return;
@@ -388,7 +410,7 @@ impl Channel {
 
         if self.nav.fsync > 0 {
             if self.num_tracking_samples == self.nav.fsync + 6000 {
-                let sync_state = self.nav_get_frame_sync_state(&preamb[0..]);
+                let sync_state = self.nav_get_frame_sync_state(&preambule[0..]);
                 if sync_state == self.nav.sync_state {
                     self.nav_decode_lnav(sync_state);
                 } else {
@@ -397,7 +419,7 @@ impl Channel {
                 }
             }
         } else if self.num_tracking_samples >= 20 * 308 + 1000 {
-            let sync = self.nav_get_frame_sync_state(&preamb[0..]);
+            let sync = self.nav_get_frame_sync_state(&preambule[0..]);
             if sync != SyncState::NONE {
                 self.nav_decode_lnav(sync);
             }

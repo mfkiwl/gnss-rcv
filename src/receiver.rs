@@ -101,23 +101,30 @@ impl Receiver {
         (tropo_bias, iono_bias)
     }
 
-    fn get_eccentric_anomaly(eph: &Ephemeris, time_from_ephemeris_ref_t: f64) -> f64 {
-        let earth_gravitational_constant = 3.986004418e14;
+    fn get_eccentric_anomaly(eph: &Ephemeris, delta_t_eph: f64) -> f64 {
+        // earth gravitational constant
+        let g = 3.986004418e14;
 
-        let computed_mean_motion = earth_gravitational_constant / eph.a.powf(1.5);
-        let corrected_mean_motion = computed_mean_motion + eph.deln;
+        // computed mean motion
+        let n0 = (g / eph.a.powi(3)).sqrt();
+        // corrected mean motion
+        let n = n0 + eph.deln;
 
-        let mean_anomaly_now = eph.m0 + corrected_mean_motion * time_from_ephemeris_ref_t;
+        // mean anomaly
+        let mk = eph.m0 + n * delta_t_eph;
 
-        let mut eccentric_anomaly = mean_anomaly_now;
+        let mut e = mk;
+        let mut e_k = 0.0;
+        let mut n_iter = 0;
 
-        for _i in 0..7 {
-            eccentric_anomaly = eccentric_anomaly
-                + (mean_anomaly_now - eccentric_anomaly + eph.ecc * eccentric_anomaly.sin())
-                    / (1.0 - eph.ecc * eccentric_anomaly.cos())
+        while (e - e_k).abs() > 1e-14 && n_iter < 30 {
+            e_k = e;
+            e = e + (mk - e + eph.ecc * e.sin()) / (1.0 - eph.ecc * e.cos());
+            n_iter += 1;
         }
+        assert!(n_iter < 20);
 
-        eccentric_anomaly
+        e
     }
 
     fn compute_sv_position_ecef(sv: SV, eph: &Ephemeris, gps_time: f64) -> [f64; 3] {
@@ -134,18 +141,18 @@ impl Receiver {
         }
 
         let ecc_anomaly = Self::get_eccentric_anomaly(eph, time_from_eph_t);
-        // XXX not the math in the GPS doc
+
         let true_anomaly = ((1.0 - (eph.ecc * eph.ecc)).sqrt() * ecc_anomaly.sin())
             .atan2(ecc_anomaly.cos() - eph.ecc);
 
-        let vk = true_anomaly;
+        let v_k = true_anomaly;
 
-        let arg_lat = vk + eph.omg;
-        let duk = eph.cus * (2.0 * arg_lat).sin() + eph.cuc * (2.0 * arg_lat).cos();
-        let drk = eph.crs * (2.0 * arg_lat).sin() + eph.crc * (2.0 * arg_lat).cos();
-        let dik = eph.cis * (2.0 * arg_lat).sin() + eph.cic * (2.0 * arg_lat).cos();
+        let phi_k = v_k + eph.omg;
+        let duk = eph.cus * (2.0 * phi_k).sin() + eph.cuc * (2.0 * phi_k).cos();
+        let drk = eph.crs * (2.0 * phi_k).sin() + eph.crc * (2.0 * phi_k).cos();
+        let dik = eph.cis * (2.0 * phi_k).sin() + eph.cic * (2.0 * phi_k).cos();
 
-        let uk = arg_lat + duk;
+        let uk = phi_k + duk;
         let rk = eph.a * (1.0 - eph.ecc * ecc_anomaly.cos()) + drk;
         let ik = eph.i0 + eph.idot * time_from_eph_t + dik;
 
@@ -153,7 +160,7 @@ impl Receiver {
         let orb_plane_y = rk * uk.sin();
 
         let omega_at_ref_time = eph.omg0 + (eph.omgd - EARTH_ROTATION_RATE) * time_from_eph_t
-            - EARTH_ROTATION_RATE * eph.toe;
+            - EARTH_ROTATION_RATE * eph.toe as f64;
 
         let ecef_x = orb_plane_x * omega_at_ref_time.cos()
             - orb_plane_y * ik.cos() * omega_at_ref_time.sin();
@@ -220,22 +227,28 @@ impl Receiver {
 
         let mut ts_ref = f64::MAX;
 
-        for (sv, channel) in &self.channels {
-            if channel.trk.cn0 < 35.0 || channel.nav.eph.week == 0 || channel.nav.eph.toe == 0.0 {
+        for (_sv, channel) in &self.channels {
+            if channel.trk.cn0 < 35.0
+                || channel.nav.eph.week == 0
+                || channel.nav.eph.toe == 0
+                || channel.nav.eph.a <= 20000000.0
+            {
                 continue;
             }
 
             let sv_ts = channel.nav.eph.ts_gpst.to_gpst_seconds() + ts_sec - channel.nav.eph.ts_sec;
-            log::warn!("{sv} has ts_sec={sv_ts:.4}");
 
             if sv_ts < ts_ref {
                 ts_ref = sv_ts;
-                log::warn!("{sv} is the ref")
             }
         }
 
         for (sv, channel) in &self.channels {
-            if channel.trk.cn0 < 35.0 || channel.nav.eph.week == 0 || channel.nav.eph.toe == 0.0 {
+            if channel.trk.cn0 < 35.0
+                || channel.nav.eph.week == 0
+                || channel.nav.eph.toe == 0
+                || channel.nav.eph.a < 20000000.0
+            {
                 continue;
             }
             const BASE_DELAY: f64 = 68.802e-3;

@@ -562,7 +562,7 @@ impl Channel {
         self.ts_sec = ts_sec;
 
         log::info!(
-            "{}: processing: ts_sec={:.4}: cn0={:.1} dopp={:.0} code_off_sec={:.6}",
+            "{}: processing: ts={:.3}: cn0={:.1} dopp={:5.0} code_off_sec={:.6}",
             self.sv,
             self.ts_sec,
             self.trk.cn0,
