@@ -1,0 +1,45 @@
+use crate::{
+    constants::{P2_11, P2_19, P2_20, P2_21, P2_23, P2_38, SC2RAD},
+    util::{getbitu, getbitu2},
+};
+
+#[derive(Default, Clone, Copy, Debug)]
+pub struct Almanac {
+    sat: u32, /* satellite number */
+    svh: u32, /* sv health (0:ok) */
+    //svconf: u32, /* as and sv config */
+    //week: u32,   /* GPS/QZS: gps week, GAL: galileo week */
+    //toa: Epoch,
+    /* SV orbit parameters */
+    a: f64,
+    e: f64,
+    //i0: f64,
+    omg0: f64,
+    omg: f64,
+    m0: f64,
+    omg_dot: f64,
+    toas: u32, /* Toa (s) in week */
+    f0: f64,   /* SV clock parameters (af0,af1) */
+    f1: f64,
+}
+
+impl Almanac {
+    pub fn nav_decode_alm(&mut self, buf: &[u8], svid: u32) {
+        self.sat = svid;
+        self.e = getbitu(buf, 68, 16) as f64 * P2_21;
+        self.toas = getbitu(buf, 90, 8) * 4096;
+        let _delta_i = getbitu(buf, 98, 16) as f64 * P2_19 * SC2RAD;
+
+        self.omg_dot = getbitu(buf, 120, 16) as f64 * P2_38 * SC2RAD;
+        self.svh = getbitu(buf, 136, 8);
+        let sqrt_a = getbitu(buf, 150, 24) as f64 * P2_11;
+        self.a = sqrt_a * sqrt_a;
+        self.omg0 = getbitu(buf, 180, 24) as f64 * P2_23 * SC2RAD;
+        self.omg = getbitu(buf, 210, 24) as f64 * P2_23 * SC2RAD;
+        self.m0 = getbitu(buf, 240, 24) as f64 * P2_23 * SC2RAD;
+        self.f0 = getbitu2(buf, 270, 8, 289, 3) as f64 * P2_20;
+        self.f1 = getbitu(buf, 278, 11) as f64 * P2_38;
+
+        log::warn!("{}: {:?}", svid, self);
+    }
+}

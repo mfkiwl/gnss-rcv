@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::channel::Channel;
-use crate::navigation::Ephemeris;
+use crate::ephemeris::Ephemeris;
 use crate::recording::IQRecording;
 use crate::types::IQSample;
 
@@ -101,17 +101,16 @@ impl Receiver {
         (tropo_bias, iono_bias)
     }
 
-    fn get_eccentric_anomaly(eph: &Ephemeris, delta_t_eph: f64) -> f64 {
+    fn get_eccentric_anomaly(eph: &Ephemeris, t_k: f64) -> f64 {
         // earth gravitational constant
-        let g = 3.986004418e14;
+        const EARTH_MU_GPS: f64 = 3.9860058e14;
 
         // computed mean motion
-        let n0 = (g / eph.a.powi(3)).sqrt();
+        let n0 = (EARTH_MU_GPS / eph.a.powi(3)).sqrt();
         // corrected mean motion
         let n = n0 + eph.deln;
-
         // mean anomaly
-        let mk = eph.m0 + n * delta_t_eph;
+        let mk = eph.m0 + n * t_k;
 
         let mut e = mk;
         let mut e_k = 0.0;
@@ -122,14 +121,15 @@ impl Receiver {
             e = e + (mk - e + eph.ecc * e.sin()) / (1.0 - eph.ecc * e.cos());
             n_iter += 1;
         }
+        log::warn!("n_iter={n_iter}");
         assert!(n_iter < 20);
 
         e
     }
 
-    fn compute_sv_position_ecef(sv: SV, eph: &Ephemeris, gps_time: f64) -> [f64; 3] {
+    fn compute_sv_position_ecef(sv: SV, eph: &Ephemeris, t: Epoch) -> [f64; 3] {
         const EARTH_ROTATION_RATE: f64 = 7.2921151467e-5;
-        let mut time_from_eph_t = gps_time - eph.toe_gpst.to_gpst_seconds();
+        let mut time_from_eph_t = (t - eph.toe_gpst).to_seconds();
 
         log::warn!("{sv}: delta-t={time_from_eph_t} toe={}", eph.toe_gpst);
 
@@ -142,10 +142,8 @@ impl Receiver {
 
         let ecc_anomaly = Self::get_eccentric_anomaly(eph, time_from_eph_t);
 
-        let true_anomaly = ((1.0 - (eph.ecc * eph.ecc)).sqrt() * ecc_anomaly.sin())
+        let v_k = ((1.0 - (eph.ecc * eph.ecc)).sqrt() * ecc_anomaly.sin())
             .atan2(ecc_anomaly.cos() - eph.ecc);
-
-        let v_k = true_anomaly;
 
         let phi_k = v_k + eph.omg;
         let duk = eph.cus * (2.0 * phi_k).sin() + eph.cuc * (2.0 * phi_k).cos();
@@ -159,24 +157,16 @@ impl Receiver {
         let orb_plane_x = rk * uk.cos();
         let orb_plane_y = rk * uk.sin();
 
-        let omega_at_ref_time = eph.omg0 + (eph.omg_dot - EARTH_ROTATION_RATE) * time_from_eph_t
+        let omega = eph.omg0 + (eph.omg_dot - EARTH_ROTATION_RATE) * time_from_eph_t
             - EARTH_ROTATION_RATE * eph.toe as f64;
 
-        let ecef_x = orb_plane_x * omega_at_ref_time.cos()
-            - orb_plane_y * ik.cos() * omega_at_ref_time.sin();
-
-        let ecef_y = orb_plane_x * omega_at_ref_time.sin()
-            + orb_plane_y * ik.cos() * omega_at_ref_time.cos();
-
+        let ecef_x = orb_plane_x * omega.cos() - orb_plane_y * ik.cos() * omega.sin();
+        let ecef_y = orb_plane_x * omega.sin() + orb_plane_y * ik.cos() * omega.cos();
         let ecef_z = orb_plane_y * ik.sin();
 
         log::warn!(
-            "{}: position: x={:.1} y={:.1} z={:.1} h={:.0}:",
-            sv,
-            ecef_x,
-            ecef_y,
-            ecef_z,
-            (ecef_x * ecef_x + ecef_y * ecef_y + ecef_z * ecef_z).sqrt()
+            "{sv}: position: x={ecef_x:.1} y={ecef_y:.1} z={ecef_z:.1} h={:.0}km:",
+            (ecef_x * ecef_x + ecef_y * ecef_y + ecef_z * ecef_z).sqrt() / 1000.0
         );
 
         [ecef_x, ecef_y, ecef_z]
@@ -227,16 +217,23 @@ impl Receiver {
 
         let mut ts_ref = f64::MAX;
 
-        for (_sv, channel) in &self.channels {
+        for (sv, channel) in &self.channels {
             if channel.trk.cn0 < 35.0
                 || channel.nav.eph.week == 0
                 || channel.nav.eph.toe == 0
                 || channel.nav.eph.a <= 20000000.0
             {
+                log::warn!(
+                    "{sv} unfit: week={} toe={} a={:.1}",
+                    channel.nav.eph.week,
+                    channel.nav.eph.toe,
+                    channel.nav.eph.a
+                );
                 continue;
             }
 
-            let sv_ts = channel.nav.eph.ts_gpst.to_gpst_seconds() + ts_sec - channel.nav.eph.ts_sec;
+            let sv_ts =
+                channel.nav.eph.tow_gpst.to_gpst_seconds() + ts_sec - channel.nav.eph.ts_sec;
 
             if sv_ts < ts_ref {
                 ts_ref = sv_ts;
@@ -252,7 +249,8 @@ impl Receiver {
                 continue;
             }
             const BASE_DELAY: f64 = 68.802e-3;
-            let sv_ts = channel.nav.eph.ts_gpst.to_gpst_seconds() + ts_sec - channel.nav.eph.ts_sec;
+            let sv_ts =
+                channel.nav.eph.tow_gpst.to_gpst_seconds() + ts_sec - channel.nav.eph.ts_sec;
             let pseudo_range_sec = sv_ts - ts_ref;
 
             log::warn!(
@@ -282,7 +280,7 @@ impl Receiver {
         let ts_solve = Epoch::from_gpst_seconds(ts_ref);
         let sv_interp = |t: Epoch, sv: SV, _size: usize| {
             let ch = self.channels.get(&sv).unwrap();
-            let pos = Self::compute_sv_position_ecef(sv, &ch.nav.eph, t.to_gpst_seconds());
+            let pos = Self::compute_sv_position_ecef(sv, &ch.nav.eph, t);
 
             Some(InterpolationResult::from_apc_position(pos.into()))
         };
