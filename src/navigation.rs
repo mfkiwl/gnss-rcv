@@ -175,8 +175,9 @@ impl Channel {
         if data_id == 1 {
             let alm_array = GPS_ALMANAC.lock().unwrap();
             if 25 <= svid && svid <= 32 {
-                let mut alm = alm_array[svid as usize];
+                let mut alm = alm_array[svid as usize - 1];
                 alm.nav_decode_alm(buf, svid);
+                log::warn!("{}: {:?}", self.sv, alm);
             } else if svid == 63 {
                 /* page 25 */
                 const ARRAY_SVCONF_IDX: [u32; 32] = [
@@ -185,7 +186,7 @@ impl Channel {
                 ];
 
                 for sv in 1..=32 {
-                    let mut alm = alm_array[svid as usize];
+                    let mut alm = alm_array[sv - 1];
                     let pos = ARRAY_SVCONF_IDX[sv - 1];
 
                     alm.svconf = getbitu(buf, pos, 4);
@@ -193,7 +194,7 @@ impl Channel {
 
                 const ARRAY_SVH_IDX: [u32; 8] = [228, 240, 246, 252, 258, 270, 276, 282];
                 for sv in 25..=32 {
-                    let mut alm = alm_array[svid as usize];
+                    let mut alm = alm_array[sv - 1];
                     let pos = ARRAY_SVH_IDX[sv - 25];
                     alm.svh = getbitu(buf, pos, 6);
                     if alm.svh != 0 {
@@ -241,6 +242,7 @@ impl Channel {
             if 1 <= svid && svid <= 24 {
                 let mut alm = alm_array[svid as usize];
                 alm.nav_decode_alm(buf, svid);
+                log::warn!("{}: {:?}", self.sv, alm);
             } else if svid == 51 {
                 let toas = getbitu(buf, 68, 8) * 4096;
                 let week = getbitu(buf, 76, 8) + 2048;
@@ -250,7 +252,7 @@ impl Channel {
                     210, 216, 222, 228, 240, 246, 252, 258,
                 ];
                 for sv in 1..=24 {
-                    let mut alm = alm_array[sv];
+                    let mut alm = alm_array[sv - 1];
                     let pos = ARRAY_SVH_IDX[sv - 25];
                     alm.svh = getbitu(buf, pos, 6);
                     if alm.svh != 0 {
@@ -258,7 +260,7 @@ impl Channel {
                     }
                 }
                 for sv in 1..=32 {
-                    let mut alm = alm_array[sv];
+                    let mut alm = alm_array[sv - 1];
                     alm.week = week;
                     alm.toas = toas;
                 }

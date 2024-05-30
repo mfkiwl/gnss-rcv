@@ -39,7 +39,5 @@ impl Almanac {
         self.m0 = getbitu(buf, 240, 24) as f64 * P2_23 * SC2RAD;
         self.f0 = getbitu2(buf, 270, 8, 289, 3) as f64 * P2_20;
         self.f1 = getbitu(buf, 278, 11) as f64 * P2_38;
-
-        log::warn!("{}: {:?}", svid, self);
     }
 }
