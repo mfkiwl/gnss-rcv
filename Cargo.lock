@@ -1003,6 +1003,7 @@ dependencies = [
  "once_cell",
  "plotters",
  "rayon",
+ "rtlsdr_mt",
  "rustfft",
  "serde",
  "structopt",
@@ -1975,6 +1976,26 @@ dependencies = [
  "medians",
  "ran",
  "rayon",
+]
+
+[[package]]
+name = "rtlsdr_mt"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ead428bf7bc845190da3cbb5db2d54465b53e9ac4fc4ddf1d84269c11415e5a"
+dependencies = [
+ "libc",
+ "rtlsdr_sys",
+]
+
+[[package]]
+name = "rtlsdr_sys"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b10767c93eb67d309e4e7530d5eb1e3ce2427fd48544e6488b03fb4ec255a67"
+dependencies = [
+ "libc",
+ "pkg-config",
 ]
 
 [[package]]

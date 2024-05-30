@@ -1,6 +1,7 @@
 use chrono::Local;
 use colored::Colorize;
 use coredump::register_panic_handler;
+use gnss_rcv::device::RtlSdrDevice;
 use gnss_rcv::plots::plot_remove_old_graph;
 use gnss_rs::constellation::Constellation;
 use gnss_rs::sv::SV;
@@ -118,6 +119,8 @@ fn main() -> std::io::Result<()> {
         }
     }
 
+    let mut device = RtlSdrDevice {};
+    device.init();
     let recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
     let mut receiver = Receiver::new(recording, opt.fs, opt.fi, opt.off_msec);
 

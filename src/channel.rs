@@ -561,14 +561,16 @@ impl Channel {
     pub fn process_samples(&mut self, iq_vec2: &Vec<Complex64>, ts_sec: f64) {
         self.ts_sec = ts_sec;
 
-        log::info!(
-            "{}: processing: ts={:.3}: cn0={:.1} dopp={:5.0} code_off_sec={:.6}",
-            self.sv,
-            self.ts_sec,
-            self.trk.cn0,
-            self.trk.doppler_hz,
-            self.trk.code_off_sec,
-        );
+        if self.state != TrackState::IDLE {
+            log::info!(
+                "{}: processing: ts={:.3}: cn0={:.1} dopp={:5.0} code_off_sec={:.6}",
+                self.sv,
+                self.ts_sec,
+                self.trk.cn0,
+                self.trk.doppler_hz,
+                self.trk.code_off_sec,
+            );
+        }
 
         match self.state {
             TrackState::ACQUISITION => self.acquisition_process(&iq_vec2),

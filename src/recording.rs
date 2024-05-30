@@ -16,7 +16,8 @@ use crate::types::IQSample;
 pub enum IQFileType {
     TypePairFloat32,
     TypePairInt16,
-    TypeRtlSdr,
+    TypeRtlSdrFile,
+
     TypeOneInt8,
 }
 
@@ -26,7 +27,7 @@ impl FromStr for IQFileType {
         match input {
             "2xf32" => Ok(IQFileType::TypePairFloat32),
             "2xi16" => Ok(IQFileType::TypePairInt16),
-            "rtlsdr" => Ok(IQFileType::TypeRtlSdr),
+            "rtlsdr-file" => Ok(IQFileType::TypeRtlSdrFile),
             "i8" => Ok(IQFileType::TypeOneInt8),
             _ => Err(format!("Failed to parse {}", input).into()),
         }
@@ -38,7 +39,7 @@ impl fmt::Display for IQFileType {
         match *self {
             IQFileType::TypePairFloat32 => write!(f, "2xf32"),
             IQFileType::TypePairInt16 => write!(f, "2xi16"),
-            IQFileType::TypeRtlSdr => write!(f, "rtlsdr"),
+            IQFileType::TypeRtlSdrFile => write!(f, "rtlsdr-file"),
             IQFileType::TypeOneInt8 => write!(f, "i8"),
         }
     }
@@ -71,7 +72,7 @@ impl IQRecording {
 
     fn get_sample_size_bytes(file_type: &IQFileType) -> usize {
         match file_type {
-            IQFileType::TypeRtlSdr => 2 * 1,
+            IQFileType::TypeRtlSdrFile => 2 * 1,
             IQFileType::TypeOneInt8 => 1,
             IQFileType::TypePairInt16 => 2 * 2,
             IQFileType::TypePairFloat32 => 2 * 4,
@@ -109,7 +110,7 @@ impl IQRecording {
             }
 
             match self.file_type {
-                IQFileType::TypeRtlSdr => {
+                IQFileType::TypeRtlSdrFile => {
                     for off in (0..len).step_by(2) {
                         iq_vec.push(Complex64 {
                             re: (buf[off + 0] as f64 - 127.) / 128.0, // use 127.5 as offset doesn't work

@@ -2,6 +2,7 @@ pub mod almanac;
 pub mod channel;
 pub mod code;
 pub mod constants;
+pub mod device;
 pub mod ephemeris;
 pub mod navigation;
 pub mod plots;
