@@ -2,8 +2,10 @@ pub struct RtlSdrDevice {}
 
 impl RtlSdrDevice {
     pub fn init(&mut self) {
-        #[cfg(target_os = "unix")]
+        log::warn!("RTL_SDR:");
+        #[cfg(target_os = "linux")]
         {
+            log::warn!("RTL_SDR__");
             let devices = rtlsdr_mt::devices();
             for dev in devices {
                 log::warn!("found rtl-sdr: {}", dev);
