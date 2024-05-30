@@ -1,11 +1,15 @@
+use std::sync::Mutex;
+
 use crate::{
     almanac::Almanac,
     channel::Channel,
+    constants::{P2_24, P2_27, P2_30, P2_50},
     ephemeris::Ephemeris,
-    util::{bmatch_n, bmatch_r, getbitu, hex_str, pack_bits, xor_bits},
+    util::{bmatch_n, bmatch_r, getbits, getbits2, getbitu, hex_str, pack_bits, xor_bits},
 };
 use colored::Colorize;
 use gnss_rtk::prelude::Epoch;
+use once_cell::sync::Lazy;
 
 const SECS_PER_WEEK: u32 = 7 * 24 * 60 * 60;
 const SDR_MAX_NSYM: usize = 18000;
@@ -13,6 +17,9 @@ const SDR_MAX_DATA: usize = 4096;
 
 const THRESHOLD_SYNC: f64 = 0.4;
 const THRESHOLD_LOST: f64 = 0.03;
+
+static GPS_ALMANAC: Lazy<Mutex<Vec<Almanac>>> =
+    Lazy::new(|| Mutex::new(vec![Almanac::default(); 32]));
 
 #[derive(PartialEq)]
 enum SyncState {
@@ -166,31 +173,53 @@ impl Channel {
         let svid = getbitu(buf, 62, 6);
 
         if data_id == 1 {
+            let alm_array = GPS_ALMANAC.lock().unwrap();
             if 25 <= svid && svid <= 32 {
-                let mut alm = Almanac::default();
+                let mut alm = alm_array[svid as usize];
                 alm.nav_decode_alm(buf, svid);
             } else if svid == 63 {
                 /* page 25 */
-                const ARRAY_IDX: [u32; 32] = [
+                const ARRAY_SVCONF_IDX: [u32; 32] = [
                     68, 72, 76, 80, 90, 94, 98, 102, 106, 110, 120, 124, 128, 132, 136, 140, 150,
                     154, 158, 162, 166, 170, 180, 184, 188, 192, 196, 200, 210, 214, 218, 222,
                 ];
 
                 for sv in 1..=32 {
-                    let pos = ARRAY_IDX[sv - 1];
-                    let _svconf = getbitu(buf, pos, 4);
+                    let mut alm = alm_array[svid as usize];
+                    let pos = ARRAY_SVCONF_IDX[sv - 1];
+
+                    alm.svconf = getbitu(buf, pos, 4);
                 }
 
                 const ARRAY_SVH_IDX: [u32; 8] = [228, 240, 246, 252, 258, 270, 276, 282];
                 for sv in 25..=32 {
+                    let mut alm = alm_array[svid as usize];
                     let pos = ARRAY_SVH_IDX[sv - 25];
-                    let svh = getbitu(buf, pos, 6);
-                    if svh != 0 {
+                    alm.svh = getbitu(buf, pos, 6);
+                    if alm.svh != 0 {
                         log::warn!("{}: subframe-4: sv {} is unhealthy", self.sv, sv)
                     }
                 }
-            } else if svid == 56 { /* page 18 */
+            } else if svid == 56 {
+                /* page 18 */
                 // handle iono, utc and leap seconds
+                let mut ion = [0.0; 8];
+
+                ion[0] = getbits(buf, 68, 8) as f64 * P2_30;
+                ion[1] = getbits(buf, 76, 8) as f64 * P2_27;
+                ion[2] = getbits(buf, 90, 8) as f64 * P2_24;
+                ion[3] = getbits(buf, 98, 8) as f64 * P2_24;
+                ion[4] = getbits(buf, 106, 8) as f64 * 2.0_f64.powi(11);
+                ion[5] = getbits(buf, 120, 8) as f64 * 2.0_f64.powi(14);
+                ion[6] = getbits(buf, 128, 8) as f64 * 2.0_f64.powi(16);
+                ion[7] = getbits(buf, 136, 8) as f64 * 2.0_f64.powi(16);
+
+                let mut utc: [f64; 4] = [0.0; 4];
+
+                utc[0] = getbits2(buf, 180, 24, 210, 8) as f64 * P2_30;
+                utc[1] = getbits(buf, 150, 24) as f64 * P2_50;
+                utc[2] = getbits(buf, 218, 8) as f64 * 2.0_f64.powi(12);
+                utc[3] = getbits(buf, 226, 8) as f64;
             }
         }
 
@@ -208,11 +237,33 @@ impl Channel {
         let svid = getbitu(buf, 62, 4);
 
         if data_id == 1 {
+            let alm_array = GPS_ALMANAC.lock().unwrap();
             if 1 <= svid && svid <= 24 {
-                let mut alm = Almanac::default();
+                let mut alm = alm_array[svid as usize];
                 alm.nav_decode_alm(buf, svid);
             } else if svid == 51 {
-                //toas=getbitu(buff,i,8)*4096; i+=8;
+                let toas = getbitu(buf, 68, 8) * 4096;
+                let week = getbitu(buf, 76, 8) + 2048;
+
+                const ARRAY_SVH_IDX: [u32; 24] = [
+                    90, 96, 102, 108, 120, 126, 132, 138, 150, 156, 162, 168, 180, 186, 192, 198,
+                    210, 216, 222, 228, 240, 246, 252, 258,
+                ];
+                for sv in 1..=24 {
+                    let mut alm = alm_array[sv];
+                    let pos = ARRAY_SVH_IDX[sv - 25];
+                    alm.svh = getbitu(buf, pos, 6);
+                    if alm.svh != 0 {
+                        log::warn!("{}: subframe-4: sv {} is unhealthy", self.sv, sv)
+                    }
+                }
+                for sv in 1..=32 {
+                    let mut alm = alm_array[sv];
+                    alm.week = week;
+                    alm.toas = toas;
+                }
+            } else {
+                log::warn!("XXX unknown svid={}", svid);
             }
         }
 

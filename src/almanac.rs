@@ -5,22 +5,22 @@ use crate::{
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Almanac {
-    sat: u32, /* satellite number */
-    svh: u32, /* sv health (0:ok) */
-    //svconf: u32, /* as and sv config */
-    //week: u32,   /* GPS/QZS: gps week, GAL: galileo week */
+    pub sat: u32,    /* satellite number */
+    pub svh: u32,    /* sv health (0:ok) */
+    pub svconf: u32, /* as and sv config */
     //toa: Epoch,
     /* SV orbit parameters */
-    a: f64,
-    e: f64,
+    pub a: f64,
+    pub e: f64,
     //i0: f64,
-    omg0: f64,
-    omg: f64,
-    m0: f64,
-    omg_dot: f64,
-    toas: u32, /* Toa (s) in week */
-    f0: f64,   /* SV clock parameters (af0,af1) */
-    f1: f64,
+    pub omg0: f64,
+    pub omg: f64,
+    pub m0: f64,
+    pub omg_dot: f64,
+    pub week: u32, /* GPS/QZS: gps week, GAL: galileo week */
+    pub toas: u32, /* Toa (s) in week */
+    pub f0: f64,   /* SV clock parameters (af0,af1) */
+    pub f1: f64,
 }
 
 impl Almanac {

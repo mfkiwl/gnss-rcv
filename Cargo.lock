@@ -1000,6 +1000,7 @@ dependencies = [
  "gnss-rs",
  "gnss-rtk",
  "log",
+ "once_cell",
  "plotters",
  "rayon",
  "rustfft",
