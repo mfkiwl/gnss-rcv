@@ -10,18 +10,16 @@ use gnss_rtk::prelude::Duration;
 use rayon::prelude::*;
 use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
-use std::time::Instant;
 
 use crate::channel::Channel;
 use crate::ephemeris::Ephemeris;
-use crate::recording::IQRecording;
 use crate::types::IQSample;
 
 const PERIOD_RCV: f64 = 0.001;
 const SPEED_OF_LIGHT: f64 = 299_792_458.0;
 
 pub struct Receiver {
-    pub recording: IQRecording,
+    read_iq_fn: Box<dyn FnMut(usize, usize)->Result<Vec<Complex64>, Box<dyn std::error::Error>>>,
     period_sp: usize, // samples per period
     fs: f64,
     fi: f64,
@@ -29,7 +27,7 @@ pub struct Receiver {
     cached_iq_vec: Vec<Complex64>,
     cached_ts_sec_tail: f64,
     channels: HashMap<SV, Channel>,
-    last_fix_sec: Instant,
+    last_fix_sec: f64,
 }
 
 impl Drop for Receiver {
@@ -37,10 +35,10 @@ impl Drop for Receiver {
 }
 
 impl Receiver {
-    pub fn new(recording: IQRecording, fs: f64, fi: f64, off_msec: usize) -> Self {
+    pub fn new(read_iq_fn: Box<dyn FnMut(usize, usize)->Result<Vec<Complex64>, Box<dyn std::error::Error>>>, fs: f64, fi: f64, off_msec: usize) -> Self {
         let period_sp = (PERIOD_RCV * fs) as usize;
         Self {
-            recording,
+            read_iq_fn,
             period_sp,
             fs,
             fi,
@@ -48,7 +46,7 @@ impl Receiver {
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_ts_sec_tail: 0.0,
             channels: HashMap::<SV, Channel>::new(),
-            last_fix_sec: Instant::now(),
+            last_fix_sec: 0.0,
         }
     }
 
@@ -65,7 +63,12 @@ impl Receiver {
         } else {
             self.period_sp
         };
-        let mut sample = self.recording.read_iq_file(self.off_samples, num_samples)?;
+
+        let iq_vec = (self.read_iq_fn)(self.off_samples, num_samples)?;
+        let mut sample = IQSample {
+            iq_vec,
+            ts_sec: self.off_samples as f64 / self.fs,
+        };
 
         self.off_samples += num_samples;
         self.cached_iq_vec.append(&mut sample.iq_vec);
@@ -172,8 +175,8 @@ impl Receiver {
         [ecef_x, ecef_y, ecef_z]
     }
 
-    fn compute_fix(&mut self) {
-        if self.last_fix_sec.elapsed().as_secs_f32() < 2.0 {
+    fn compute_fix(&mut self, ts: f64) {
+        if ts - self.last_fix_sec < 2.0 {
             return;
         }
         let ts_sec = self.cached_ts_sec_tail - 0.001;
@@ -194,7 +197,7 @@ impl Receiver {
 
         if num_eph_complete < 4 {
             log::warn!("only {num_eph_complete} sats with appropriate ephemeris");
-            self.last_fix_sec = Instant::now();
+            self.last_fix_sec = ts;
             return;
         }
 
@@ -293,7 +296,7 @@ impl Receiver {
             log::warn!("Failed to get a fix: {}", solutions.err().unwrap());
         }
 
-        self.last_fix_sec = Instant::now();
+        self.last_fix_sec = ts;
     }
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -303,7 +306,7 @@ impl Receiver {
             .par_iter_mut()
             .for_each(|(_id, sat)| sat.process_samples(&samples.iq_vec, samples.ts_sec));
 
-        self.compute_fix();
+        self.compute_fix(samples.ts_sec);
 
         Ok(())
     }

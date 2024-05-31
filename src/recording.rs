@@ -11,8 +11,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
 
-use crate::types::IQSample;
-
 pub enum IQFileType {
     TypePairFloat32,
     TypePairInt16,
@@ -82,7 +80,7 @@ impl IQRecording {
         &mut self,
         off_samples: usize,
         num_samples: usize,
-    ) -> Result<IQSample, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
         let file = File::open(self.file_path.clone())?;
         let sample_size = Self::get_sample_size_bytes(&self.file_type);
         let buf_size = sample_size * num_samples;
@@ -198,9 +196,6 @@ impl IQRecording {
             n
         );
 
-        Ok(IQSample {
-            iq_vec,
-            ts_sec: off_samples as f64 / self.fs,
-        })
+        Ok(iq_vec)
     }
 }

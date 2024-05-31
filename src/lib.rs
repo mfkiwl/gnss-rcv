@@ -10,3 +10,5 @@ pub mod receiver;
 pub mod recording;
 pub mod types;
 pub mod util;
+
+extern crate rtlsdr_mt;

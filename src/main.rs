@@ -30,19 +30,21 @@ struct Options {
         default_value = "resources/nov_3_time_18_48_st_ives_2xf32"
     )]
     file: PathBuf,
-    #[structopt(short = "l", long, default_value = "")]
+    #[structopt(short = "d", long, help="use rtl-sdr device")]
+    use_device: bool,
+    #[structopt(short = "l", long, help="path to log file", default_value = "")]
     log_file: PathBuf,
-    #[structopt(short = "t", long, default_value = "2xf32")]
+    #[structopt(short = "t", long, help="type of IQ file", default_value = "2xf32")]
     iq_file_type: IQFileType,
-    #[structopt(long, default_value = "2046000.0")]
+    #[structopt(long, help="sampling frequency", default_value = "2046000.0")]
     fs: f64,
-    #[structopt(long, default_value = "0.0")]
+    #[structopt(long, help="intermediate frequency", default_value = "0.0")]
     fi: f64,
-    #[structopt(long, default_value = "0")]
+    #[structopt(long, help="offset in file", default_value = "0")]
     off_msec: usize,
-    #[structopt(long, default_value = "0")]
+    #[structopt(long, help="duration of sample", default_value = "0")]
     num_msec: usize,
-    #[structopt(long, default_value = "")]
+    #[structopt(long, help="satellites to use", default_value = "")]
     sats: String,
 }
 
@@ -119,10 +121,25 @@ fn main() -> std::io::Result<()> {
         }
     }
 
-    let mut device = RtlSdrDevice {};
-    device.init();
-    let recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
-    let mut receiver = Receiver::new(recording, opt.fs, opt.fi, opt.off_msec);
+    let mut device = RtlSdrDevice::new(exit_req.clone()).unwrap();
+    let mut recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
+
+    if opt.use_device {
+        log::warn!("before start_reading");
+        device.start_reading();
+        log::warn!("after start_reading");
+    };
+
+    let file_read_fn = Box::new(move |off_samples, num_samples| {
+                               recording.read_iq_file(off_samples, num_samples)});
+    let dev_read_fn = Box::new(move |off_samples, num_samples| {
+                               device.read_iq_data(off_samples, num_samples)});
+
+    let mut receiver = if opt.use_device {
+        Receiver::new(dev_read_fn, opt.fs, opt.fi, opt.off_msec)
+    } else {
+        Receiver::new(file_read_fn, opt.fs, opt.fi, opt.off_msec)
+    };
 
     receiver.init("L1CA", sat_vec);
     let mut n = 0;
