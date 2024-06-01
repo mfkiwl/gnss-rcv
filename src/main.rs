@@ -6,6 +6,7 @@ use gnss_rcv::plots::plot_remove_old_graph;
 use gnss_rs::constellation::Constellation;
 use gnss_rs::sv::SV;
 use log::LevelFilter;
+use rustfft::num_complex::Complex64;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -19,6 +20,8 @@ use gnss_rcv::receiver::Receiver;
 use gnss_rcv::recording::IQFileType;
 use gnss_rcv::recording::IQRecording;
 
+type ReadIQFn = dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>;
+
 #[derive(StructOpt)]
 #[structopt(name = "gnss-rs", about = "Gnss tracker")]
 struct Options {
@@ -30,21 +33,21 @@ struct Options {
         default_value = "resources/nov_3_time_18_48_st_ives_2xf32"
     )]
     file: PathBuf,
-    #[structopt(short = "d", long, help="use rtl-sdr device")]
+    #[structopt(short = "d", long, help = "use rtl-sdr device")]
     use_device: bool,
-    #[structopt(short = "l", long, help="path to log file", default_value = "")]
+    #[structopt(short = "l", long, help = "path to log file", default_value = "")]
     log_file: PathBuf,
-    #[structopt(short = "t", long, help="type of IQ file", default_value = "2xf32")]
+    #[structopt(short = "t", long, help = "type of IQ file", default_value = "2xf32")]
     iq_file_type: IQFileType,
-    #[structopt(long, help="sampling frequency", default_value = "2046000.0")]
+    #[structopt(long, help = "sampling frequency", default_value = "2046000.0")]
     fs: f64,
-    #[structopt(long, help="intermediate frequency", default_value = "0.0")]
+    #[structopt(long, help = "intermediate frequency", default_value = "0.0")]
     fi: f64,
-    #[structopt(long, help="offset in file", default_value = "0")]
+    #[structopt(long, help = "offset in file", default_value = "0")]
     off_msec: usize,
-    #[structopt(long, help="duration of sample", default_value = "0")]
+    #[structopt(long, help = "duration of sample", default_value = "0")]
     num_msec: usize,
-    #[structopt(long, help="satellites to use", default_value = "")]
+    #[structopt(long, help = "satellites to use", default_value = "")]
     sats: String,
 }
 
@@ -82,6 +85,27 @@ fn init_ctrl_c(exit_req: Arc<AtomicBool>) {
     .expect("Error setting Ctrl-C handler");
 }
 
+fn get_sat_list(opt: &Options) -> Vec<SV> {
+    let mut sat_vec: Vec<SV> = vec![];
+    if !opt.sats.is_empty() {
+        for s in opt.sats.split(',') {
+            let prn = u8::from_str_radix(s, 10).unwrap();
+            sat_vec.push(SV::new(Constellation::GPS, prn));
+        }
+    } else {
+        for prn in 1..=32 as u8 {
+            sat_vec.push(SV::new(Constellation::GPS, prn));
+        }
+        let use_sbas = false;
+        if use_sbas {
+            for prn in 120..=158 as u8 {
+                sat_vec.push(SV::new(Constellation::GPS, prn));
+            }
+        }
+    }
+    sat_vec
+}
+
 fn main() -> std::io::Result<()> {
     let opt = Options::from_args();
     let exit_req = Arc::new(AtomicBool::new(false));
@@ -103,43 +127,30 @@ fn main() -> std::io::Result<()> {
         opt.num_msec,
     );
 
-    let mut sat_vec: Vec<SV> = vec![];
-    if !opt.sats.is_empty() {
-        for s in opt.sats.split(',') {
-            let prn = u8::from_str_radix(s, 10).unwrap();
-            sat_vec.push(SV::new(Constellation::GPS, prn));
-        }
-    } else {
-        for prn in 1..=32 as u8 {
-            sat_vec.push(SV::new(Constellation::GPS, prn));
-        }
-        let use_sbas = false;
-        if use_sbas {
-            for prn in 120..=158 as u8 {
-                sat_vec.push(SV::new(Constellation::GPS, prn));
-            }
-        }
-    }
-
-    let mut device = RtlSdrDevice::new(exit_req.clone()).unwrap();
-    let mut recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
+    let sat_vec: Vec<SV> = get_sat_list(&opt);
+    let read_fn: Box<ReadIQFn>;
 
     if opt.use_device {
-        log::warn!("before start_reading");
+        let res = RtlSdrDevice::new(exit_req.clone());
+        if res.is_err() {
+            log::warn!("Failed to open rtl-sdr device.");
+            return Ok(());
+        }
+        let mut device = res.unwrap();
+
         device.start_reading();
         log::warn!("after start_reading");
-    };
-
-    let file_read_fn = Box::new(move |off_samples, num_samples| {
-                               recording.read_iq_file(off_samples, num_samples)});
-    let dev_read_fn = Box::new(move |off_samples, num_samples| {
-                               device.read_iq_data(off_samples, num_samples)});
-
-    let mut receiver = if opt.use_device {
-        Receiver::new(dev_read_fn, opt.fs, opt.fi, opt.off_msec)
+        read_fn =
+            Box::new(move |off_samples, num_samples| device.read_iq_data(off_samples, num_samples));
     } else {
-        Receiver::new(file_read_fn, opt.fs, opt.fi, opt.off_msec)
-    };
+        let mut recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
+
+        read_fn = Box::new(move |off_samples, num_samples| {
+            recording.read_iq_file(off_samples, num_samples)
+        });
+    }
+
+    let mut receiver = Receiver::new(read_fn, opt.fs, opt.fi, opt.off_msec);
 
     receiver.init("L1CA", sat_vec);
     let mut n = 0;

@@ -15,7 +15,6 @@ pub enum IQFileType {
     TypePairFloat32,
     TypePairInt16,
     TypeRtlSdrFile,
-
     TypeOneInt8,
 }
 
@@ -46,7 +45,6 @@ impl fmt::Display for IQFileType {
 pub struct IQRecording {
     file_path: PathBuf,
     file_type: IQFileType,
-    fs: f64,
 }
 
 impl IQRecording {
@@ -64,7 +62,6 @@ impl IQRecording {
         Self {
             file_path,
             file_type,
-            fs,
         }
     }
 
@@ -183,11 +180,6 @@ impl IQRecording {
         }
         assert_eq!(n, num_samples);
 
-        log::debug!(
-            "num_samples: {} -- {:.1} msec",
-            format!("{}", iq_vec.len()).yellow(),
-            iq_vec.len() as f64 * 1000.0 / self.fs,
-        );
         let bw = n as f64 * buf_size as f64 / 1024.0 / 1024.0 / ts.elapsed().as_secs_f64();
         log::debug!(
             "read_from_file: {} msec -- bandwidth: {:.1} MB/sec -- num_read_ops={}",
