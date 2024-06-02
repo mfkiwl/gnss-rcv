@@ -10,6 +10,7 @@ use gnss_rtk::prelude::Duration;
 use rayon::prelude::*;
 use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
+use std::time::Instant;
 
 use crate::channel::Channel;
 use crate::ephemeris::Ephemeris;
@@ -28,10 +29,6 @@ pub struct Receiver {
     cached_ts_sec_tail: f64,
     channels: HashMap<SV, Channel>,
     last_fix_sec: f64,
-}
-
-impl Drop for Receiver {
-    fn drop(&mut self) {}
 }
 
 impl Receiver {
@@ -57,14 +54,16 @@ impl Receiver {
         }
     }
 
-    fn fetch_samples_msec(&mut self) -> Result<IQSample, Box<dyn std::error::Error>> {
+    fn fetch_samples_msec(&mut self) -> (Result<IQSample, Box<dyn std::error::Error>>,u128) {
         let num_samples = if self.cached_iq_vec.len() == 0 {
             2 * self.period_sp
         } else {
             self.period_sp
         };
 
-        let iq_vec = (self.read_iq_fn)(self.off_samples, num_samples)?;
+        let ts = Instant::now();
+        let iq_vec = (self.read_iq_fn)(self.off_samples, num_samples).unwrap();
+        let elapsed = ts.elapsed().as_millis();
         let mut sample = IQSample {
             iq_vec,
             ts_sec: self.off_samples as f64 / self.fs,
@@ -84,10 +83,10 @@ impl Receiver {
         // the timestamp given corresponds to the beginning of the last code
         // [...code...][...code...]
         //             ^
-        Ok(IQSample {
+        (Ok(IQSample {
             iq_vec: self.cached_iq_vec[len - 2 * self.period_sp..].to_vec(),
             ts_sec: self.cached_ts_sec_tail - 0.001,
-        })
+        }), elapsed)
     }
 
     fn get_tropo_iono_bias() -> (TroposphereBias, IonosphereBias) {
@@ -300,13 +299,18 @@ impl Receiver {
     }
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let samples = self.fetch_samples_msec()?;
+        let ts = Instant::now();
+        let (samples, e) = self.fetch_samples_msec();
+        let fetch_ts = ts.elapsed().as_millis();
+        let samples = samples.unwrap();
 
         self.channels
             .par_iter_mut()
-            .for_each(|(_id, sat)| sat.process_samples(&samples.iq_vec, samples.ts_sec));
+            .for_each(|(_id, channel)| channel.process_samples(&samples.iq_vec, samples.ts_sec));
 
-        self.compute_fix(samples.ts_sec);
+        log::warn!("receiver: ts={:.3} -- took {} / {e} -- {} msec",
+                    samples.ts_sec, fetch_ts, ts.elapsed().as_millis());
+        //self.compute_fix(samples.ts_sec);
 
         Ok(())
     }

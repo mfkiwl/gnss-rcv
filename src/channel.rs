@@ -3,6 +3,7 @@ use gnss_rs::sv::SV;
 use plotters::prelude::*;
 use rustfft::num_complex::Complex64;
 use rustfft::FftPlanner;
+use std::time::Instant;
 
 const PI: f64 = std::f64::consts::PI;
 
@@ -32,7 +33,7 @@ const HISTORY_NUM: usize = 20000;
 const CN0_THRESHOLD_LOCKED: f64 = 35.0;
 const CN0_THRESHOLD_LOST: f64 = 32.0;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum TrackState {
     TRACKING,
     ACQUISITION,
@@ -560,6 +561,7 @@ impl Channel {
 
     pub fn process_samples(&mut self, iq_vec2: &Vec<Complex64>, ts_sec: f64) {
         self.ts_sec = ts_sec;
+        let ts = Instant::now();
 
         if self.state != TrackState::IDLE {
             log::info!(
@@ -577,5 +579,7 @@ impl Channel {
             TrackState::TRACKING => self.tracking_process(&iq_vec2),
             TrackState::IDLE => self.idle_process(),
         }
+        log::warn!("{} ts={:.3} -- {:?} took {}msec",
+                   self.sv, ts_sec, self.state, ts.elapsed().as_millis());
     }
 }

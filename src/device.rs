@@ -1,37 +1,50 @@
 use rustfft::num_complex::Complex64;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::sync::Arc;
+use std::collections::VecDeque;
+use std::thread;
 
 pub struct RtlSdrDevice {
     controller: rtlsdr_mt::Controller,
-    iq_vec: Vec<Complex64>,
-    reader: rtlsdr_mt::Reader,
-    exit_req: Arc<AtomicBool>,
-    num_samples: u64,
+    iq_deque: Arc<Mutex<VecDeque<Vec<Complex64>>>>,
+    num_samples_total: Arc<Mutex<usize>>,
+    num_samples: Arc<Mutex<usize>>,
+    num_sleep: u64,
+}
+
+impl Drop for RtlSdrDevice {
+    fn drop(&mut self) {
+        log::warn!("rtlsdr: stopping read. num_samples={}", self.num_samples.lock().unwrap());
+        log::warn!("rtlsdr: num_sleep={}", self.num_sleep);
+
+        self.controller.cancel_async_read();
+    }
 }
 
 impl RtlSdrDevice {
-    pub fn new(exit_req: Arc<AtomicBool>) -> Result<RtlSdrDevice, ()> {
+    pub fn new() -> Result<RtlSdrDevice, ()> {
         let devices = rtlsdr_mt::devices();
 
         for dev in devices {
             log::warn!("found rtl-sdr: {:?}", dev);
         }
 
-        let (ctl, reader) = rtlsdr_mt::open(0)?;
+        let (ctl, mut reader) = rtlsdr_mt::open(0)?;
         let mut m = Self {
             controller: ctl,
-            reader,
-            iq_vec: vec![],
-            exit_req,
-            num_samples: 0,
+            iq_deque: Arc::new(Mutex::new(VecDeque::new())),
+            num_samples_total: Arc::new(Mutex::new(0)),
+            num_samples: Arc::new(Mutex::new(0)),
+            num_sleep: 0,
         };
 
         let mut tunes = rtlsdr_mt::TunerGains::default();
         let gains = m.controller.tuner_gains(&mut tunes);
         log::warn!("gain: {:?}", gains);
+        let g_max = gains.iter().max().unwrap();
 
-        m.controller.enable_agc().expect("Failed to enable agc");
+        //m.controller.enable_agc().expect("Failed to enable agc");
+        m.controller.set_tuner_gain(*g_max).expect("Failed to enable agc");
         m.controller
             .set_bias_tee(1)
             .expect("Failed to set bias tee");
@@ -42,34 +55,30 @@ impl RtlSdrDevice {
             .set_sample_rate(2046 * 1000)
             .expect("Failed to change sample rate");
 
-        Ok(m)
-    }
+        let iq_deq = m.iq_deque.clone();
+        let num_samples_total = m.num_samples_total.clone();
+        let num_samples = m.num_samples.clone();
+        thread::spawn(move || {
+            loop {
+                log::warn!("starting async_read");
+                reader.read_async(0, 0, |array| {
+                   let mut v = vec![Complex64::default(); array.len()];
+                   for i in 0..array.len() / 2{
+                       let re = array[2 * i + 0] as f64 - 126.0 / 128.0;
+                       let im = array[2 * i + 1] as f64 - 126.0 / 128.0;
+                       v[i] = Complex64 { re, im };
+                   }
+                  
+                   let n = v.len();
+                   iq_deq.lock().unwrap().push_back(v);
+                   log::warn!("added {n}");
+                   *num_samples.lock().unwrap() += n;
+                   *num_samples_total.lock().unwrap() += n;
+                }).unwrap();
+             }
+         });
 
-    pub fn start_reading(&mut self) {
-        // 0: use default num of buffer and buffer size
-        self.reader
-            .read_async(0, 0, |array| {
-                let mut re_sum = 0.0;
-                let mut im_sum = 0.0;
-                for i in (0..array.len()).step_by(2) {
-                    let re = array[i + 0] as f64 - 126.0 / 128.0;
-                    let im = array[i + 1] as f64 - 126.0 / 128.0;
-                    re_sum += array[i + 0] as f64;
-                    im_sum += array[i + 1] as f64;
-                    self.iq_vec.push(Complex64 { re, im });
-                    self.num_samples += 1;
-                }
-                log::warn!(
-                    "avg: {} {}",
-                    2.0 * re_sum / array.len() as f64,
-                    2.0 * im_sum / array.len() as f64
-                );
-                if self.exit_req.load(Ordering::SeqCst) || self.iq_vec.len() > 2046 * 1000 * 10 {
-                    log::warn!("rtlsdr: stopping read. num_samples={}", self.num_samples);
-                    self.controller.cancel_async_read();
-                }
-            })
-            .unwrap();
+        Ok(m)
     }
 
     pub fn read_iq_data(
@@ -77,15 +86,37 @@ impl RtlSdrDevice {
         _off_samples: usize,
         num_samples: usize,
     ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
-        if cfg!(target_os = "macos") {
-            assert!(self.iq_vec.len() >= num_samples);
-
-            let iq_vec = self.iq_vec[0..num_samples].to_vec();
-            let _ = self.iq_vec.drain(0..num_samples);
-
-            Ok(iq_vec)
-        } else {
-            Ok(vec![])
+        loop {
+            if *self.num_samples.lock().unwrap() >= num_samples {
+                break;
+            }
+            thread::sleep(std::time::Duration::from_millis(1));
+            self.num_sleep += 1;
         }
+        let mut vec = vec![];
+        let mut iq_deq = self.iq_deque.lock().unwrap();
+
+        let v_front = iq_deq.front_mut().unwrap();
+        log::warn!("iq-deq {}", v_front.len());
+        let n = usize::min(num_samples, v_front.len());
+        for i in 0..n {
+            vec[i] = v_front[i];
+        }
+        let _ = v_front.drain(0..n);
+        if v_front.len() == 0 {
+            let _ = iq_deq.pop_front();
+        }
+
+        if n < num_samples {
+            let v_front = iq_deq.front_mut().unwrap();
+            for i in n..num_samples {
+                vec[i] = (*v_front)[i - n];
+            }
+            let _ = (*v_front).drain(0..num_samples - n);
+        }
+
+        *self.num_samples.lock().unwrap() -= num_samples;
+
+        Ok(vec)
     }
 }

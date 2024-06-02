@@ -131,15 +131,13 @@ fn main() -> std::io::Result<()> {
     let read_fn: Box<ReadIQFn>;
 
     if opt.use_device {
-        let res = RtlSdrDevice::new(exit_req.clone());
+        let res = RtlSdrDevice::new();
         if res.is_err() {
             log::warn!("Failed to open rtl-sdr device.");
             return Ok(());
         }
         let mut device = res.unwrap();
 
-        device.start_reading();
-        log::warn!("after start_reading");
         read_fn =
             Box::new(move |off_samples, num_samples| device.read_iq_data(off_samples, num_samples));
     } else {
@@ -170,6 +168,8 @@ fn main() -> std::io::Result<()> {
     }
 
     println!("GNSS terminating: {:.2} sec", ts.elapsed().as_secs_f32());
+    println!("processed: {:.2} sec", ts.elapsed().as_secs_f32());
+    exit_req.store(true, Ordering::SeqCst);
 
     Ok(())
 }
