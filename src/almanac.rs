@@ -12,7 +12,6 @@ pub struct Almanac {
     /* SV orbit parameters */
     pub a: f64,
     pub e: f64,
-    //i0: f64,
     pub omg0: f64,
     pub omg: f64,
     pub m0: f64,

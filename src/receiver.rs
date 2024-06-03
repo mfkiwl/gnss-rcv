@@ -9,7 +9,7 @@ use gnss_rtk::prelude::Duration;
 
 use crate::channel::Channel;
 use crate::ephemeris::Ephemeris;
-use crate::types::IQSample;
+
 use rayon::prelude::*;
 use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
@@ -59,21 +59,17 @@ impl Receiver {
         }
     }
 
-    fn fetch_samples_msec(&mut self) -> Result<IQSample, Box<dyn std::error::Error>> {
+    fn fetch_samples_msec(&mut self) -> Result<(Vec<Complex64>, f64), Box<dyn std::error::Error>> {
         let num_samples = if self.cached_iq_vec.len() == 0 {
             2 * self.period_sp
         } else {
             self.period_sp
         };
 
-        let iq_vec = (self.read_iq_fn)(self.off_samples, num_samples).unwrap();
-        let mut sample = IQSample {
-            iq_vec,
-            ts_sec: self.off_samples as f64 / self.fs,
-        };
+        let mut iq_vec = (self.read_iq_fn)(self.off_samples, num_samples).unwrap();
 
         self.off_samples += num_samples;
-        self.cached_iq_vec.append(&mut sample.iq_vec);
+        self.cached_iq_vec.append(&mut iq_vec);
         self.cached_ts_sec_tail += num_samples as f64 / (1000.0 * self.period_sp as f64);
 
         if self.cached_iq_vec.len() > 2 * self.period_sp {
@@ -87,10 +83,10 @@ impl Receiver {
         // [...code...][...code...]
         //             ^
 
-        Ok(IQSample {
-            iq_vec: self.cached_iq_vec[len - 2 * self.period_sp..].to_vec(),
-            ts_sec: self.cached_ts_sec_tail - 0.001,
-        })
+        Ok((
+            self.cached_iq_vec[len - 2 * self.period_sp..].to_vec(),
+            self.cached_ts_sec_tail - 0.001,
+        ))
     }
 
     fn get_tropo_iono_bias() -> (TroposphereBias, IonosphereBias) {
@@ -303,13 +299,13 @@ impl Receiver {
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let samples = self.fetch_samples_msec();
-        let samples = samples.unwrap();
+        let (iq_vec, ts_sec) = samples.unwrap();
 
         self.channels
             .par_iter_mut()
-            .for_each(|(_id, channel)| channel.process_samples(&samples.iq_vec, samples.ts_sec));
+            .for_each(|(_id, channel)| channel.process_samples(&iq_vec, ts_sec));
 
-        self.compute_fix(samples.ts_sec);
+        self.compute_fix(ts_sec);
 
         Ok(())
     }

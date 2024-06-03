@@ -27,7 +27,7 @@ const B_PLL: f64 = 10.0; // bandwidth of PLL filter Hz
 const B_DLL: f64 = 0.5; // bandwidth of DLL filter Hz
 
 const DOPPLER_SPREAD_HZ: f64 = 8000.0;
-const DOPPLER_SPREAD_BINS: usize = 160 * 2;
+const DOPPLER_SPREAD_BINS: usize = 50;
 const HISTORY_NUM: usize = 20000;
 const CN0_THRESHOLD_LOCKED: f64 = 35.0;
 const CN0_THRESHOLD_LOST: f64 = 32.0;
@@ -65,6 +65,27 @@ pub struct History {
     pub corr_p_hist: Vec<Complex64>,
 }
 
+impl History {
+    pub fn trim(&mut self) {
+        if self.doppler_hz_hist.len() > HISTORY_NUM {
+            self.doppler_hz_hist.rotate_left(1);
+            self.doppler_hz_hist.pop();
+        }
+        if self.phi_error_hist.len() > HISTORY_NUM {
+            self.phi_error_hist.rotate_left(1);
+            self.phi_error_hist.pop();
+        }
+        if self.corr_p_hist.len() > HISTORY_NUM {
+            self.corr_p_hist.rotate_left(1);
+            self.corr_p_hist.pop();
+        }
+        if self.code_phase_offset_hist.len() > HISTORY_NUM {
+            self.code_phase_offset_hist.rotate_left(1);
+            self.code_phase_offset_hist.pop();
+        }
+    }
+}
+
 pub struct Acquisition {
     prn_code_fft: Vec<Complex64>,
 }
@@ -76,7 +97,7 @@ pub struct Channel {
     fi: f64, // intermediate frequency
 
     code_sec: f64,  // code duration in sec
-    code_len: f64,  // prn code len
+    code_len: f64,  // prn code len: e.g. 1023
     code_sp: usize, // samples per upsampled code: e.g. 2046 for L1CA
 
     fft_planner: FftPlanner<f64>,
@@ -291,9 +312,9 @@ impl Channel {
         plot_iq_scatter(self.sv, &&self.hist.corr_p_hist[len - n..len]);
     }
 
-    fn acquisition_process(&mut self, iq_vec2: &Vec<Complex64>) {
+    fn acquisition_process(&mut self, iq_vec: &Vec<Complex64>) {
         // only take the last minute worth of data
-        let iq_vec_slice = &iq_vec2[self.code_sp..];
+        let iq_vec_slice = &iq_vec[self.code_sp..];
         let step_hz = 2.0 * DOPPLER_SPREAD_HZ / DOPPLER_SPREAD_BINS as f64;
 
         for i in 0..DOPPLER_SPREAD_BINS {
@@ -510,28 +531,9 @@ impl Channel {
         }
     }
 
-    fn hist_trim(&mut self) {
-        if self.hist.doppler_hz_hist.len() > HISTORY_NUM {
-            self.hist.doppler_hz_hist.rotate_left(1);
-            self.hist.doppler_hz_hist.pop();
-        }
-        if self.hist.phi_error_hist.len() > HISTORY_NUM {
-            self.hist.phi_error_hist.rotate_left(1);
-            self.hist.phi_error_hist.pop();
-        }
-        if self.hist.corr_p_hist.len() > HISTORY_NUM {
-            self.hist.corr_p_hist.rotate_left(1);
-            self.hist.corr_p_hist.pop();
-        }
-        if self.hist.code_phase_offset_hist.len() > HISTORY_NUM {
-            self.hist.code_phase_offset_hist.rotate_left(1);
-            self.hist.code_phase_offset_hist.pop();
-        }
-    }
-
-    fn tracking_process(&mut self, iq_vec2: &Vec<Complex64>) {
+    fn tracking_process(&mut self, iq_vec: &Vec<Complex64>) {
         self.get_code_and_carrier_phase();
-        let (c_p, c_e, c_l, c_n) = self.tracking_compute_correlation(&iq_vec2);
+        let (c_p, c_e, c_l, c_n) = self.tracking_compute_correlation(&iq_vec);
         self.hist.corr_p_hist.push(c_p);
 
         if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN {
@@ -548,7 +550,7 @@ impl Channel {
         }
 
         self.hist.doppler_hz_hist.push(self.trk.doppler_hz);
-        self.hist_trim();
+        self.hist.trim();
         self.update_all_plots(false);
         self.num_tracking_samples += 1;
         self.log_periodically();
@@ -558,7 +560,7 @@ impl Channel {
         }
     }
 
-    pub fn process_samples(&mut self, iq_vec2: &Vec<Complex64>, ts_sec: f64) {
+    pub fn process_samples(&mut self, iq_vec: &Vec<Complex64>, ts_sec: f64) {
         self.ts_sec = ts_sec;
 
         if self.state != TrackState::IDLE {
@@ -573,8 +575,8 @@ impl Channel {
         }
 
         match self.state {
-            TrackState::ACQUISITION => self.acquisition_process(&iq_vec2),
-            TrackState::TRACKING => self.tracking_process(&iq_vec2),
+            TrackState::ACQUISITION => self.acquisition_process(iq_vec),
+            TrackState::TRACKING => self.tracking_process(iq_vec),
             TrackState::IDLE => self.idle_process(),
         }
     }
