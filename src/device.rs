@@ -1,7 +1,7 @@
 use rustfft::num_complex::Complex64;
-use std::sync::Mutex;
-use std::sync::Arc;
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::thread;
 
 pub struct RtlSdrDevice {
@@ -14,7 +14,10 @@ pub struct RtlSdrDevice {
 
 impl Drop for RtlSdrDevice {
     fn drop(&mut self) {
-        log::warn!("rtlsdr: stopping read. num_samples={}", self.num_samples.lock().unwrap());
+        log::warn!(
+            "rtlsdr: stopping read. num_samples={}",
+            self.num_samples.lock().unwrap()
+        );
         log::warn!("rtlsdr: num_sleep={}", self.num_sleep);
 
         self.controller.cancel_async_read();
@@ -43,8 +46,12 @@ impl RtlSdrDevice {
         log::warn!("gain: {:?}", gains);
         let g_max = gains.iter().max().unwrap();
 
+        log::warn!("Using gain: {g_max}");
+
         //m.controller.enable_agc().expect("Failed to enable agc");
-        m.controller.set_tuner_gain(*g_max).expect("Failed to enable agc");
+        m.controller
+            .set_tuner_gain(*g_max)
+            .expect("Failed to enable agc");
         m.controller
             .set_bias_tee(1)
             .expect("Failed to set bias tee");
@@ -54,29 +61,29 @@ impl RtlSdrDevice {
         m.controller
             .set_sample_rate(2046 * 1000)
             .expect("Failed to change sample rate");
+        m.controller.reset_buffer().expect("Failed to reset buffer");
 
         let iq_deq = m.iq_deque.clone();
         let num_samples_total = m.num_samples_total.clone();
         let num_samples = m.num_samples.clone();
-        thread::spawn(move || {
-            loop {
-                log::warn!("starting async_read");
-                reader.read_async(0, 0, |array| {
-                   let mut v = vec![Complex64::default(); array.len()];
-                   for i in 0..array.len() / 2{
-                       let re = array[2 * i + 0] as f64 - 126.0 / 128.0;
-                       let im = array[2 * i + 1] as f64 - 126.0 / 128.0;
-                       v[i] = Complex64 { re, im };
-                   }
-                  
-                   let n = v.len();
-                   iq_deq.lock().unwrap().push_back(v);
-                   log::warn!("added {n}");
-                   *num_samples.lock().unwrap() += n;
-                   *num_samples_total.lock().unwrap() += n;
-                }).unwrap();
-             }
-         });
+        thread::spawn(move || loop {
+            log::warn!("starting async_read");
+            reader
+                .read_async(0, 0, |array| {
+                    let mut v = vec![Complex64::default(); array.len()];
+                    for i in 0..array.len() / 2 {
+                        let re = array[2 * i + 0] as f64 - 126.0 / 128.0;
+                        let im = array[2 * i + 1] as f64 - 126.0 / 128.0;
+                        v[i] = Complex64 { re, im };
+                    }
+
+                    let n = v.len();
+                    iq_deq.lock().unwrap().push_back(v);
+                    *num_samples.lock().unwrap() += n;
+                    *num_samples_total.lock().unwrap() += n;
+                })
+                .unwrap();
+        });
 
         Ok(m)
     }
@@ -97,10 +104,9 @@ impl RtlSdrDevice {
         let mut iq_deq = self.iq_deque.lock().unwrap();
 
         let v_front = iq_deq.front_mut().unwrap();
-        log::warn!("iq-deq {}", v_front.len());
         let n = usize::min(num_samples, v_front.len());
         for i in 0..n {
-            vec[i] = v_front[i];
+            vec.push(v_front[i]);
         }
         let _ = v_front.drain(0..n);
         if v_front.len() == 0 {
@@ -110,9 +116,9 @@ impl RtlSdrDevice {
         if n < num_samples {
             let v_front = iq_deq.front_mut().unwrap();
             for i in n..num_samples {
-                vec[i] = (*v_front)[i - n];
+                vec.push(v_front[i - n]);
             }
-            let _ = (*v_front).drain(0..num_samples - n);
+            let _ = v_front.drain(0..num_samples - n);
         }
 
         *self.num_samples.lock().unwrap() -= num_samples;

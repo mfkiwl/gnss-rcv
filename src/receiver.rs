@@ -7,20 +7,18 @@ use gnss_rtk::prelude::{
 use colored::Colorize;
 use gnss_rtk::prelude::Duration;
 
-use rayon::prelude::*;
-use rustfft::num_complex::Complex64;
-use std::collections::HashMap;
-use std::time::Instant;
-
 use crate::channel::Channel;
 use crate::ephemeris::Ephemeris;
 use crate::types::IQSample;
+use rayon::prelude::*;
+use rustfft::num_complex::Complex64;
+use std::collections::HashMap;
 
 const PERIOD_RCV: f64 = 0.001;
 const SPEED_OF_LIGHT: f64 = 299_792_458.0;
 
 pub struct Receiver {
-    read_iq_fn: Box<dyn FnMut(usize, usize)->Result<Vec<Complex64>, Box<dyn std::error::Error>>>,
+    read_iq_fn: Box<dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>>,
     period_sp: usize, // samples per period
     fs: f64,
     fi: f64,
@@ -32,7 +30,14 @@ pub struct Receiver {
 }
 
 impl Receiver {
-    pub fn new(read_iq_fn: Box<dyn FnMut(usize, usize)->Result<Vec<Complex64>, Box<dyn std::error::Error>>>, fs: f64, fi: f64, off_msec: usize) -> Self {
+    pub fn new(
+        read_iq_fn: Box<
+            dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>,
+        >,
+        fs: f64,
+        fi: f64,
+        off_msec: usize,
+    ) -> Self {
         let period_sp = (PERIOD_RCV * fs) as usize;
         Self {
             read_iq_fn,
@@ -54,16 +59,14 @@ impl Receiver {
         }
     }
 
-    fn fetch_samples_msec(&mut self) -> (Result<IQSample, Box<dyn std::error::Error>>,u128) {
+    fn fetch_samples_msec(&mut self) -> Result<IQSample, Box<dyn std::error::Error>> {
         let num_samples = if self.cached_iq_vec.len() == 0 {
             2 * self.period_sp
         } else {
             self.period_sp
         };
 
-        let ts = Instant::now();
         let iq_vec = (self.read_iq_fn)(self.off_samples, num_samples).unwrap();
-        let elapsed = ts.elapsed().as_millis();
         let mut sample = IQSample {
             iq_vec,
             ts_sec: self.off_samples as f64 / self.fs,
@@ -83,10 +86,11 @@ impl Receiver {
         // the timestamp given corresponds to the beginning of the last code
         // [...code...][...code...]
         //             ^
-        (Ok(IQSample {
+
+        Ok(IQSample {
             iq_vec: self.cached_iq_vec[len - 2 * self.period_sp..].to_vec(),
             ts_sec: self.cached_ts_sec_tail - 0.001,
-        }), elapsed)
+        })
     }
 
     fn get_tropo_iono_bias() -> (TroposphereBias, IonosphereBias) {
@@ -179,7 +183,6 @@ impl Receiver {
             return;
         }
         let ts_sec = self.cached_ts_sec_tail - 0.001;
-        log::warn!("t={ts_sec:.3} -- {}", format!("attempting fix").red());
 
         // somewhere in the middle of Lake Leman
         let initial = AprioriPosition::from_geo(Vector3::new(46.5, 6.6, 0.0));
@@ -199,6 +202,7 @@ impl Receiver {
             self.last_fix_sec = ts;
             return;
         }
+        log::warn!("t={ts_sec:.3} -- {}", format!("attempting fix").red());
 
         /*
          * https://www.insidegnss.com/auto/IGM_janfeb12-Solutions.pdf
@@ -299,18 +303,14 @@ impl Receiver {
     }
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let ts = Instant::now();
-        let (samples, e) = self.fetch_samples_msec();
-        let fetch_ts = ts.elapsed().as_millis();
+        let samples = self.fetch_samples_msec();
         let samples = samples.unwrap();
 
         self.channels
             .par_iter_mut()
             .for_each(|(_id, channel)| channel.process_samples(&samples.iq_vec, samples.ts_sec));
 
-        log::warn!("receiver: ts={:.3} -- took {} / {e} -- {} msec",
-                    samples.ts_sec, fetch_ts, ts.elapsed().as_millis());
-        //self.compute_fix(samples.ts_sec);
+        self.compute_fix(samples.ts_sec);
 
         Ok(())
     }
