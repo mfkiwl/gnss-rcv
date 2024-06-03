@@ -62,6 +62,9 @@ impl RtlSdrDevice {
             .set_sample_rate(2046 * 1000)
             .expect("Failed to change sample rate");
         m.controller.reset_buffer().expect("Failed to reset buffer");
+        let ppm = m.controller.ppm();
+
+        log::warn!("ppm={ppm}");
 
         let iq_deq = m.iq_deque.clone();
         let num_samples_total = m.num_samples_total.clone();

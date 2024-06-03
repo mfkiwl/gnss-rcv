@@ -198,7 +198,6 @@ impl Receiver {
         }
 
         if num_eph_complete < 4 {
-            log::warn!("only {num_eph_complete} sats with appropriate ephemeris");
             self.last_fix_sec = ts;
             return;
         }
