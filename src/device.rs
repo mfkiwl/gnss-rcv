@@ -93,7 +93,6 @@ impl RtlSdrDevice {
 
     pub fn read_iq_data(
         &mut self,
-        _off_samples: usize,
         num_samples: usize,
     ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
         loop {

@@ -2,6 +2,7 @@ use chrono::Local;
 use colored::Colorize;
 use coredump::register_panic_handler;
 use gnss_rcv::device::RtlSdrDevice;
+use gnss_rcv::network::RtlSdrTcp;
 use gnss_rcv::plots::plot_remove_old_graph;
 use gnss_rs::constellation::Constellation;
 use gnss_rs::sv::SV;
@@ -23,7 +24,7 @@ use gnss_rcv::recording::IQRecording;
 type ReadIQFn = dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>;
 
 #[derive(StructOpt)]
-#[structopt(name = "gnss-rs", about = "Gnss tracker")]
+#[structopt(name = "gnss-rcv", about = "Gnss tracker")]
 struct Options {
     #[structopt(long, help = "print gold codes")]
     print_gold_code: bool,
@@ -33,6 +34,8 @@ struct Options {
         default_value = "resources/nov_3_time_18_48_st_ives_2xf32"
     )]
     file: PathBuf,
+    #[structopt(short = "s", long, help = "host for rtl-sdr-tcp", default_value = "")]
+    hostname: String,
     #[structopt(short = "d", long, help = "use rtl-sdr device")]
     use_device: bool,
     #[structopt(short = "l", long, help = "path to log file", default_value = "")]
@@ -136,10 +139,18 @@ fn main() -> std::io::Result<()> {
             log::warn!("Failed to open rtl-sdr device.");
             return Ok(());
         }
-        let mut device = res.unwrap();
+        let mut dev = res.unwrap();
 
-        read_fn =
-            Box::new(move |off_samples, num_samples| device.read_iq_data(off_samples, num_samples));
+        read_fn = Box::new(move |_off_samples, num_samples| dev.read_iq_data(num_samples));
+    } else if !opt.hostname.is_empty() {
+        let res = RtlSdrTcp::new(&opt.hostname);
+        if let Err(e) = RtlSdrTcp::new(&opt.hostname) {
+            log::warn!("Failed to open tcp connection: {e}");
+            return Err(e);
+        }
+        let mut net = res.unwrap();
+
+        read_fn = Box::new(move |_off_samples, num_samples| net.read_iq_data(num_samples));
     } else {
         let mut recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
 

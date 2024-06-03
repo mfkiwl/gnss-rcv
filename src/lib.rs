@@ -5,6 +5,7 @@ pub mod constants;
 pub mod device;
 pub mod ephemeris;
 pub mod navigation;
+pub mod network;
 pub mod plots;
 pub mod receiver;
 pub mod recording;
