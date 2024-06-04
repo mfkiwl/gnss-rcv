@@ -233,7 +233,7 @@ impl Channel {
         code_offset_idx: usize,
     ) {
         log::warn!(
-            "{}: {} cn0={cn0:.1} dopp={doppler_hz:5.0} code_off={code_offset_idx} ts_sec={:.3}",
+            "{}: {} cn0={cn0:.1} dopp={doppler_hz:5.0} code_off={code_offset_idx:4} ts_sec={:.3}",
             self.sv,
             format!("LOCK").green(),
             self.ts_sec,
@@ -565,7 +565,7 @@ impl Channel {
 
         if self.state != TrackState::IDLE {
             log::info!(
-                "{}: processing: ts={:.3}: cn0={:.1} dopp={:5.0} code_off_sec={:.6}",
+                "{}: processing: ts={:.3}: cn0={:.1} dopp={:5.0} code_off_sec={:2.6}",
                 self.sv,
                 self.ts_sec,
                 self.trk.cn0,

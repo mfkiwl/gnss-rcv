@@ -108,8 +108,8 @@ impl IQRecording {
                 IQFileType::TypeRtlSdrFile => {
                     for off in (0..len).step_by(2) {
                         iq_vec.push(Complex64 {
-                            re: (buf[off + 0] as f64 - 127.) / 128.0, // use 127.5 as offset doesn't work
-                            im: (buf[off + 1] as f64 - 127.) / 128.0,
+                            re: (buf[off + 0] as f64 - 127.3) / 128.0,
+                            im: (buf[off + 1] as f64 - 127.3) / 128.0,
                         });
                         n += 1;
                         if n >= num_samples {

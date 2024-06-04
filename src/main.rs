@@ -143,8 +143,8 @@ fn main() -> std::io::Result<()> {
 
         read_fn = Box::new(move |_off_samples, num_samples| dev.read_iq_data(num_samples));
     } else if !opt.hostname.is_empty() {
-        let res = RtlSdrTcp::new(&opt.hostname);
-        if let Err(e) = RtlSdrTcp::new(&opt.hostname) {
+        let res = RtlSdrTcp::new(&opt.hostname, exit_req.clone());
+        if let Err(e) = RtlSdrTcp::new(&opt.hostname, exit_req.clone()) {
             log::warn!("Failed to open tcp connection: {e}");
             return Err(e);
         }

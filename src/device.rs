@@ -75,8 +75,8 @@ impl RtlSdrDevice {
                 .read_async(0, 0, |array| {
                     let mut v = vec![Complex64::default(); array.len()];
                     for i in 0..array.len() / 2 {
-                        let re = array[2 * i + 0] as f64 - 126.0 / 128.0;
-                        let im = array[2 * i + 1] as f64 - 126.0 / 128.0;
+                        let re = (array[2 * i + 0] as f64 - 127.3) / 128.0;
+                        let im = (array[2 * i + 1] as f64 - 127.3) / 128.0;
                         v[i] = Complex64 { re, im };
                     }
 
