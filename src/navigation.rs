@@ -130,10 +130,10 @@ impl Channel {
             p /= 2.0 * n as f64;
 
             if p.abs() >= THRESHOLD_SYNC {
-                self.nav.ssync = self.num_tracking_samples - n;
+                self.nav.ssync = self.num_trk_samples - n;
                 log::info!("{}: SYNC: p={:.5} ssync={}", self.sv, p, self.nav.ssync);
             }
-        } else if (self.num_tracking_samples - self.nav.ssync) % num == 0 {
+        } else if (self.num_trk_samples - self.nav.ssync) % num == 0 {
             let p = self.nav_mean_ip(num);
             if p.abs() >= THRESHOLD_LOST {
                 let sym: u8 = if p >= 0.0 { 1 } else { 0 };
@@ -323,7 +323,7 @@ impl Channel {
 
         if Self::nav_test_lnav_parity(&buf[0..]) {
             log::info!("{}: PARITY OK", self.sv);
-            self.nav.fsync = self.num_tracking_samples;
+            self.nav.fsync = self.num_trk_samples;
             self.nav.sync_state = sync;
             pack_bits(&buf, 0, &mut self.nav.data);
 
@@ -385,7 +385,7 @@ impl Channel {
         }
 
         if self.nav.fsync > 0 {
-            if self.num_tracking_samples == self.nav.fsync + 6000 {
+            if self.num_trk_samples == self.nav.fsync + 6000 {
                 let sync_state = self.nav_get_frame_sync_state(&preambule[0..]);
                 if sync_state == self.nav.sync_state {
                     self.nav_decode_lnav(sync_state);
@@ -394,7 +394,7 @@ impl Channel {
                     self.nav.sync_state = SyncState::NORMAL;
                 }
             }
-        } else if self.num_tracking_samples >= 20 * 308 + 1000 {
+        } else if self.num_trk_samples >= 20 * 308 + 1000 {
             let sync = self.nav_get_frame_sync_state(&preambule[0..]);
             if sync != SyncState::NONE {
                 self.nav_decode_lnav(sync);

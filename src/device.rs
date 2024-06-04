@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 
+use crate::code::Code;
+
 pub struct RtlSdrDevice {
     controller: rtlsdr_mt::Controller,
     iq_deque: Arc<Mutex<VecDeque<Vec<Complex64>>>>,
@@ -25,7 +27,7 @@ impl Drop for RtlSdrDevice {
 }
 
 impl RtlSdrDevice {
-    pub fn new() -> Result<RtlSdrDevice, ()> {
+    pub fn new(sig: &str, fs: f64) -> Result<RtlSdrDevice, ()> {
         let devices = rtlsdr_mt::devices();
 
         for dev in devices {
@@ -56,10 +58,10 @@ impl RtlSdrDevice {
             .set_bias_tee(1)
             .expect("Failed to set bias tee");
         m.controller
-            .set_center_freq(1_575_420_000)
+            .set_center_freq(Code::get_code_freq(sig) as u32)
             .expect("Failed to change center freq");
         m.controller
-            .set_sample_rate(2046 * 1000)
+            .set_sample_rate(fs as u32)
             .expect("Failed to change sample rate");
         m.controller.reset_buffer().expect("Failed to reset buffer");
         let ppm = m.controller.ppm();

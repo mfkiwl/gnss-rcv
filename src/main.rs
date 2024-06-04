@@ -109,7 +109,7 @@ fn get_sat_list(opt: &Options) -> Vec<SV> {
     sat_vec
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Options::from_args();
     let exit_req = Arc::new(AtomicBool::new(false));
 
@@ -132,9 +132,10 @@ fn main() -> std::io::Result<()> {
 
     let sat_vec: Vec<SV> = get_sat_list(&opt);
     let read_fn: Box<ReadIQFn>;
+    let sig = "L1CA";
 
     if opt.use_device {
-        let res = RtlSdrDevice::new();
+        let res = RtlSdrDevice::new(sig, opt.fs);
         if res.is_err() {
             log::warn!("Failed to open rtl-sdr device.");
             return Ok(());
@@ -143,12 +144,7 @@ fn main() -> std::io::Result<()> {
 
         read_fn = Box::new(move |_off_samples, num_samples| dev.read_iq_data(num_samples));
     } else if !opt.hostname.is_empty() {
-        let res = RtlSdrTcp::new(&opt.hostname, exit_req.clone());
-        if let Err(e) = RtlSdrTcp::new(&opt.hostname, exit_req.clone()) {
-            log::warn!("Failed to open tcp connection: {e}");
-            return Err(e);
-        }
-        let mut net = res.unwrap();
+        let mut net = RtlSdrTcp::new(&opt.hostname, exit_req.clone(), sig, opt.fs)?;
 
         read_fn = Box::new(move |_off_samples, num_samples| net.read_iq_data(num_samples));
     } else {
@@ -161,7 +157,7 @@ fn main() -> std::io::Result<()> {
 
     let mut receiver = Receiver::new(read_fn, opt.fs, opt.fi, opt.off_msec);
 
-    receiver.init("L1CA", sat_vec);
+    receiver.init(sig, sat_vec);
     let mut n = 0;
     let ts = Instant::now();
 

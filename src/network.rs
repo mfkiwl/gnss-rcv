@@ -8,19 +8,30 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
+use std::thread::JoinHandle;
+use std::time::Instant;
+
+use crate::code::Code;
 
 pub struct RtlSdrTcp {
     iq_deque: Arc<Mutex<VecDeque<Vec<Complex64>>>>,
     num_samples_total: Arc<Mutex<usize>>,
     num_samples: Arc<Mutex<usize>>,
     num_sleep: u64,
+    read_th: Option<JoinHandle<()>>,
+    ts: Instant,
 }
 
 impl Drop for RtlSdrTcp {
     fn drop(&mut self) {
+        let tot = *self.num_samples_total.lock().unwrap();
         log::warn!(
-            "rtlsdrtcp: stopping read. num_samples={}",
-            self.num_samples.lock().unwrap()
+            "num_samples={}/{} sleep={} -- {:.2} sec. rate={:.1}/sec",
+            self.num_samples.lock().unwrap(),
+            tot,
+            self.num_sleep,
+            self.ts.elapsed().as_secs_f64(),
+            tot as f64 / self.ts.elapsed().as_secs_f64()
         );
     }
 }
@@ -34,14 +45,21 @@ fn rtl_sdr_send_cmd(socket: &mut TcpStream, cmd: u8, param: u32) -> std::io::Res
 }
 
 impl RtlSdrTcp {
-    pub fn new(hostname: &String, exit_req: Arc<AtomicBool>) -> std::io::Result<RtlSdrTcp> {
+    pub fn new(
+        hostname: &String,
+        exit_req: Arc<AtomicBool>,
+        sig: &str,
+        fs: f64,
+    ) -> std::io::Result<RtlSdrTcp> {
         let mut socket = TcpStream::connect(hostname.clone())?;
 
-        let m = RtlSdrTcp {
+        let mut m = RtlSdrTcp {
             iq_deque: Arc::new(Mutex::new(VecDeque::new())),
             num_samples_total: Arc::new(Mutex::new(0)),
             num_samples: Arc::new(Mutex::new(0)),
             num_sleep: 0,
+            read_th: None,
+            ts: Instant::now(),
         };
 
         let iq_deq = m.iq_deque.clone();
@@ -53,14 +71,14 @@ impl RtlSdrTcp {
         // set automatic gain control
         rtl_sdr_send_cmd(&mut socket, 0x8, 1)?;
         // set center frequency
-        rtl_sdr_send_cmd(&mut socket, 0x1, 1_575_420_000)?;
+        rtl_sdr_send_cmd(&mut socket, 0x1, Code::get_code_freq(sig) as u32)?;
         // set sample rate
-        rtl_sdr_send_cmd(&mut socket, 0x2, 2046 * 1000)?;
+        rtl_sdr_send_cmd(&mut socket, 0x2, fs as u32)?;
 
         // set tuner gain
         //rtl_sdr_send_cmd(&mut socket, 0x4, 480)?;
 
-        thread::spawn(move || loop {
+        let th = thread::spawn(move || loop {
             let mut data = [0u8; 2036 * 2];
             let mut v = vec![Complex64::default(); data.len()];
             let res = socket.read_exact(&mut data);
@@ -82,6 +100,7 @@ impl RtlSdrTcp {
             *num_samples.lock().unwrap() += n;
             *num_samples_total.lock().unwrap() += n;
         });
+        m.read_th = Some(th);
 
         Ok(m)
     }

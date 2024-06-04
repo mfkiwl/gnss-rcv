@@ -188,7 +188,7 @@ impl Receiver {
         let mut num_eph_complete = 0;
 
         for (_sv, channel) in &self.channels {
-            if channel.trk.cn0 > 35.0 && channel.nav.eph.ts_sec != 0.0 {
+            if channel.get_cn0() > 35.0 && channel.nav.eph.ts_sec != 0.0 {
                 num_eph_complete += 1;
             }
         }
@@ -219,12 +219,12 @@ impl Receiver {
         let mut ts_ref = f64::MAX;
 
         for (sv, channel) in &self.channels {
-            if channel.trk.cn0 < 35.0
+            if channel.get_cn0() < 35.0
                 || channel.nav.eph.week == 0
                 || channel.nav.eph.toe == 0
                 || channel.nav.eph.a <= 20000000.0
             {
-                log::warn!(
+                log::debug!(
                     "{sv} unfit: week={} toe={} a={:.1}",
                     channel.nav.eph.week,
                     channel.nav.eph.toe,
@@ -242,7 +242,7 @@ impl Receiver {
         }
 
         for (sv, channel) in &self.channels {
-            if channel.trk.cn0 < 35.0
+            if channel.get_cn0() < 35.0
                 || channel.nav.eph.week == 0
                 || channel.nav.eph.toe == 0
                 || channel.nav.eph.a < 20000000.0
@@ -256,7 +256,7 @@ impl Receiver {
 
             log::warn!(
                 "{sv} - cn0={:.1} sv_ts={sv_ts} pseudo_range_sec={pseudo_range_sec}",
-                channel.trk.cn0
+                channel.get_cn0()
             );
             assert!(pseudo_range_sec >= 0.0);
 
@@ -268,7 +268,7 @@ impl Receiver {
                 vec![Observation {
                     carrier: Carrier::L1,
                     value: SPEED_OF_LIGHT * (BASE_DELAY + pseudo_range_sec),
-                    snr: Some(channel.trk.cn0),
+                    snr: Some(channel.get_cn0()),
                 }],
                 vec![], // not required for SPP
                 vec![], // not used

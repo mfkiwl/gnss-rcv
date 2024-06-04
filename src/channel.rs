@@ -33,7 +33,7 @@ const CN0_THRESHOLD_LOCKED: f64 = 35.0;
 const CN0_THRESHOLD_LOST: f64 = 32.0;
 
 #[derive(PartialEq, Debug)]
-enum TrackState {
+enum State {
     TRACKING,
     ACQUISITION,
     IDLE,
@@ -52,7 +52,6 @@ pub struct Tracking {
     sum_corr_l: f64,
     sum_corr_p: f64,
     sum_corr_n: f64,
-    sum_p: Vec<Vec<f64>>,
 }
 
 #[derive(Default)]
@@ -88,6 +87,7 @@ impl History {
 
 pub struct Acquisition {
     prn_code_fft: Vec<Complex64>,
+    sum_p: Vec<Vec<f64>>,
 }
 
 pub struct Channel {
@@ -101,16 +101,16 @@ pub struct Channel {
     code_sp: usize, // samples per upsampled code: e.g. 2046 for L1CA
 
     fft_planner: FftPlanner<f64>,
-    state: TrackState,
+    state: State,
 
     pub ts_sec: f64, // current time
-    pub num_tracking_samples: usize,
+    pub num_trk_samples: usize,
     num_acq_samples: usize,
-    num_idle_samples: usize,
+    num_idl_samples: usize,
 
     pub hist: History,
     pub nav: Navigation,
-    pub trk: Tracking,
+    trk: Tracking,
     acq: Acquisition,
 }
 
@@ -121,6 +121,9 @@ impl Drop for Channel {
 }
 
 impl Channel {
+    pub fn get_cn0(&self) -> f64 {
+        self.trk.cn0
+    }
     pub fn new(sig: &str, sv: SV, fs: f64, fi: f64) -> Self {
         let code_buf = Code::gen_code(sig, sv.prn).unwrap();
         let code_sec = Code::get_code_period(sig);
@@ -151,23 +154,26 @@ impl Channel {
             code_sp,
 
             num_acq_samples: 0,
-            num_idle_samples: 0,
-            num_tracking_samples: 0,
+            num_idl_samples: 0,
+            num_trk_samples: 0,
 
-            state: TrackState::ACQUISITION,
+            state: State::ACQUISITION,
             nav: Navigation::new(),
             hist: History::default(),
             trk: Tracking {
                 prn_code,
-                sum_p: vec![vec![0.0; code_sp]; DOPPLER_SPREAD_BINS],
+
                 ..Default::default()
             },
-            acq: Acquisition { prn_code_fft },
+            acq: Acquisition {
+                prn_code_fft,
+                sum_p: vec![vec![0.0; code_sp]; DOPPLER_SPREAD_BINS],
+            },
         }
     }
 
     fn idle_start(&mut self) {
-        if self.state == TrackState::TRACKING {
+        if self.state == State::TRACKING {
             log::warn!(
                 "{}: {} cn0={:.1} ts_sec={:.3}",
                 self.sv,
@@ -183,29 +189,29 @@ impl Channel {
                 self.ts_sec,
             );
         }
-        self.state = TrackState::IDLE;
-        self.num_idle_samples = 0;
-        self.num_tracking_samples = 0;
+        self.state = State::IDLE;
+        self.num_idl_samples = 0;
+        self.num_trk_samples = 0;
         self.num_acq_samples = 0;
     }
 
     fn idle_process(&mut self) {
-        self.num_idle_samples += 1;
-        if self.num_idle_samples as f64 * self.code_sec > T_IDLE {
+        self.num_idl_samples += 1;
+        if self.num_idl_samples as f64 * self.code_sec > T_IDLE {
             self.acquisition_start();
         }
     }
 
     fn acquisition_init(&mut self) {
-        self.trk.sum_p = vec![vec![0.0; self.code_sp]; DOPPLER_SPREAD_BINS];
+        self.acq.sum_p = vec![vec![0.0; self.code_sp]; DOPPLER_SPREAD_BINS];
         self.num_acq_samples = 0;
-        self.num_idle_samples = 0;
-        self.num_tracking_samples = 0;
+        self.num_idl_samples = 0;
+        self.num_trk_samples = 0;
     }
 
     fn acquisition_start(&mut self) {
         self.acquisition_init();
-        self.state = TrackState::ACQUISITION;
+        self.state = State::ACQUISITION;
     }
 
     fn tracking_init(&mut self) {
@@ -218,10 +224,10 @@ impl Channel {
         self.trk.sum_corr_e = 0.0;
         self.trk.sum_corr_l = 0.0;
         self.trk.sum_corr_n = 0.0;
-        self.num_tracking_samples = 0;
+        self.num_trk_samples = 0;
         self.num_acq_samples = 0;
-        self.num_idle_samples = 0;
-        self.num_tracking_samples = 0;
+        self.num_idl_samples = 0;
+        self.num_trk_samples = 0;
         self.nav.init();
     }
 
@@ -239,7 +245,7 @@ impl Channel {
             self.ts_sec,
         );
         self.tracking_init();
-        self.state = TrackState::TRACKING;
+        self.state = State::TRACKING;
 
         self.trk.code_off_sec = code_off_sec;
         self.trk.doppler_hz = doppler_hz;
@@ -323,7 +329,7 @@ impl Channel {
             assert_eq!(c_non_coherent.len(), self.code_sp);
 
             for j in 0..self.code_sp {
-                self.trk.sum_p[i][j] += c_non_coherent[j];
+                self.acq.sum_p[i][j] += c_non_coherent[j];
             }
         }
 
@@ -341,9 +347,9 @@ impl Channel {
                 let mut v_peak = 0.0;
                 let mut j_peak = 0;
                 for j in 0..self.code_sp {
-                    p_sum += self.trk.sum_p[i][j];
-                    if self.trk.sum_p[i][j] > v_peak {
-                        v_peak = self.trk.sum_p[i][j];
+                    p_sum += self.acq.sum_p[i][j];
+                    if self.acq.sum_p[i][j] > v_peak {
+                        v_peak = self.acq.sum_p[i][j];
                         j_peak = j;
                     }
                 }
@@ -358,7 +364,7 @@ impl Channel {
 
             let doppler_hz = -DOPPLER_SPREAD_HZ + idx as f64 * step_hz;
             let code_off_sec = idx_peak as f64 / self.code_sp as f64 * self.code_sec;
-            let p_avg = p_total / self.trk.sum_p[idx].len() as f64 / DOPPLER_SPREAD_BINS as f64;
+            let p_avg = p_total / self.acq.sum_p[idx].len() as f64 / DOPPLER_SPREAD_BINS as f64;
             let cn0 = 10.0 * ((p_peak - p_avg) / p_avg / self.code_sec).log10();
 
             if cn0 >= CN0_THRESHOLD_LOCKED {
@@ -431,7 +437,7 @@ impl Channel {
     }
 
     fn run_fll(&mut self) {
-        if self.num_tracking_samples < 2 {
+        if self.num_trk_samples < 2 {
             return;
         }
         let len = self.hist.corr_p_hist.len();
@@ -444,7 +450,7 @@ impl Channel {
             return;
         }
 
-        let b = if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN / 2.0 {
+        let b = if self.num_trk_samples as f64 * self.code_sec < T_FPULLIN / 2.0 {
             B_FLL_WIDE // 10.0
         } else {
             B_FLL_NARROW // 2.-
@@ -471,7 +477,7 @@ impl Channel {
         assert_eq!(n, 10);
         self.trk.sum_corr_e += c_e.norm();
         self.trk.sum_corr_l += c_l.norm();
-        if self.num_tracking_samples % n == 0 {
+        if self.num_trk_samples % n == 0 {
             let e = self.trk.sum_corr_e;
             let l = self.trk.sum_corr_l;
             let err_code = (e - l) / (e + l) / 2.0 * self.code_sec / self.code_len;
@@ -485,10 +491,13 @@ impl Channel {
         self.trk.sum_corr_p += c_p.norm_sqr();
         self.trk.sum_corr_n += c_n.norm_sqr();
 
-        if self.num_tracking_samples % (T_CN0 / self.code_sec) as usize == 0 {
+        if self.num_trk_samples % (T_CN0 / self.code_sec) as usize == 0 {
             if self.trk.sum_corr_n > 0.0 {
-                let cn0 =
-                    10.0 * (self.trk.sum_corr_p / self.trk.sum_corr_n / self.code_sec).log10();
+                let cn0 = 10.0
+                    * ((self.trk.sum_corr_p - self.trk.sum_corr_n)
+                        / self.trk.sum_corr_n
+                        / self.code_sec)
+                        .log10();
                 self.trk.cn0 += 0.5 * (cn0 - self.trk.cn0);
             }
             self.trk.sum_corr_n = 0.0;
@@ -536,7 +545,7 @@ impl Channel {
         let (c_p, c_e, c_l, c_n) = self.tracking_compute_correlation(&iq_vec);
         self.hist.corr_p_hist.push(c_p);
 
-        if self.num_tracking_samples as f64 * self.code_sec < T_FPULLIN {
+        if self.num_trk_samples as f64 * self.code_sec < T_FPULLIN {
             self.run_fll();
         } else {
             self.run_pll(c_p);
@@ -545,14 +554,14 @@ impl Channel {
         self.run_dll(c_e, c_l);
         self.update_cn0(c_p, c_n);
 
-        if self.num_tracking_samples as f64 * self.code_sec >= T_NPULLIN {
+        if self.num_trk_samples as f64 * self.code_sec >= T_NPULLIN {
             self.nav_decode();
         }
 
         self.hist.doppler_hz_hist.push(self.trk.doppler_hz);
         self.hist.trim();
         self.update_all_plots(false);
-        self.num_tracking_samples += 1;
+        self.num_trk_samples += 1;
         self.log_periodically();
 
         if self.trk.cn0 < CN0_THRESHOLD_LOST {
@@ -563,7 +572,7 @@ impl Channel {
     pub fn process_samples(&mut self, iq_vec: &Vec<Complex64>, ts_sec: f64) {
         self.ts_sec = ts_sec;
 
-        if self.state != TrackState::IDLE {
+        if self.state != State::IDLE {
             log::info!(
                 "{}: processing: ts={:.3}: cn0={:.1} dopp={:5.0} code_off_sec={:2.6}",
                 self.sv,
@@ -575,9 +584,9 @@ impl Channel {
         }
 
         match self.state {
-            TrackState::ACQUISITION => self.acquisition_process(iq_vec),
-            TrackState::TRACKING => self.tracking_process(iq_vec),
-            TrackState::IDLE => self.idle_process(),
+            State::ACQUISITION => self.acquisition_process(iq_vec),
+            State::TRACKING => self.tracking_process(iq_vec),
+            State::IDLE => self.idle_process(),
         }
     }
 }
