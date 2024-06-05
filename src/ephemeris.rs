@@ -8,6 +8,7 @@ use crate::{
 
 #[derive(Default, Clone, Copy)]
 pub struct Ephemeris {
+    pub sv: SV,
     pub tow: u32,
     pub ts_sec: f64, // receiver time for 1st subframe
     pub tow_gpst: Epoch,
@@ -46,6 +47,12 @@ pub struct Ephemeris {
 }
 
 impl Ephemeris {
+    pub fn new(sv: SV) -> Self {
+        Self {
+            sv,
+            ..Default::default()
+        }
+    }
     pub fn nav_decode_lnav_subframe1(&mut self, buf: &[u8], sv: SV) {
         self.tow = getbitu(buf, 30, 17) * 6;
         self.week = getbitu(buf, 60, 10) + 2048;

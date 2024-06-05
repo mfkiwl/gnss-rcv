@@ -130,6 +130,15 @@ impl Channel {
 
         self.trk.cn0
     }
+
+    pub fn is_ephemeris_complete(&self) -> bool {
+        self.get_cn0() >= 35.0
+            && self.nav.eph.ts_sec != 0.0
+            && self.nav.eph.week != 0
+            && self.nav.eph.toe != 0
+            && self.nav.eph.a >= 20_000_000.0
+    }
+
     pub fn new(sig: &str, sv: SV, fs: f64, fi: f64) -> Self {
         let code_buf = Code::gen_code(sig, sv.prn).unwrap();
         let code_sec = Code::get_code_period(sig);
@@ -164,7 +173,7 @@ impl Channel {
             num_trk_samples: 0,
 
             state: State::ACQUISITION,
-            nav: Navigation::new(),
+            nav: Navigation::new(sv),
             hist: History::default(),
             trk: Tracking {
                 prn_code,

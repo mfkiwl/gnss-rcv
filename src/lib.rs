@@ -9,6 +9,7 @@ pub mod network;
 pub mod plots;
 pub mod receiver;
 pub mod recording;
+pub mod solver;
 pub mod util;
 
 extern crate rtlsdr_mt;

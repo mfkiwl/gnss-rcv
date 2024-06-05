@@ -8,6 +8,7 @@ use crate::{
     util::{bmatch_n, bmatch_r, getbits, getbits2, getbitu, hex_str, pack_bits, xor_bits},
 };
 use colored::Colorize;
+use gnss_rs::sv::SV;
 use gnss_rtk::prelude::Epoch;
 use once_cell::sync::Lazy;
 
@@ -50,12 +51,13 @@ pub struct Navigation {
 }
 
 impl Navigation {
-    pub fn new() -> Self {
+    pub fn new(sv: SV) -> Self {
         Self {
             sync_state: SyncState::NORMAL,
             syms: vec![0; SDR_MAX_NSYM],
             tsyms: vec![0.0; SDR_MAX_NSYM],
             data: vec![0u8; SDR_MAX_DATA],
+            eph: Ephemeris::new(sv),
             ..Default::default()
         }
     }
