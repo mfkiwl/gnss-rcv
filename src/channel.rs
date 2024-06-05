@@ -13,6 +13,7 @@ use crate::plots::plot_remove;
 use crate::plots::plot_time_graph;
 use crate::util::calc_correlation;
 use crate::util::doppler_shift;
+use crate::util::get_max_with_idx;
 
 const SP_CORR: f64 = 0.5;
 const T_IDLE: f64 = 3.0;
@@ -85,6 +86,7 @@ impl History {
     }
 }
 
+#[derive(Default)]
 pub struct Acquisition {
     prn_code_fft: Vec<Complex64>,
     sum_p: Vec<Vec<f64>>,
@@ -122,6 +124,10 @@ impl Drop for Channel {
 
 impl Channel {
     pub fn get_cn0(&self) -> f64 {
+        if self.state != State::TRACKING {
+            return 0.0;
+        }
+
         self.trk.cn0
     }
     pub fn new(sig: &str, sv: SV, fs: f64, fi: f64) -> Self {
@@ -162,7 +168,6 @@ impl Channel {
             hist: History::default(),
             trk: Tracking {
                 prn_code,
-
                 ..Default::default()
             },
             acq: Acquisition {
@@ -336,39 +341,32 @@ impl Channel {
         self.num_acq_samples += 1;
 
         if self.num_acq_samples as f64 * self.code_sec >= T_ACQ {
+            let mut code_offset_idx = 0;
             let mut idx = 0;
-            let mut idx_peak = 0;
             let mut p_max = 0.0;
             let mut p_peak = 0.0;
             let mut p_total = 0.0;
 
             for i in 0..DOPPLER_SPREAD_BINS {
-                let mut p_sum = 0.0;
-                let mut v_peak = 0.0;
-                let mut j_peak = 0;
-                for j in 0..self.code_sp {
-                    p_sum += self.acq.sum_p[i][j];
-                    if self.acq.sum_p[i][j] > v_peak {
-                        v_peak = self.acq.sum_p[i][j];
-                        j_peak = j;
-                    }
-                }
+                let p_sum = self.acq.sum_p[i].iter().sum();
+                let (j_peak, v_peak) = get_max_with_idx(&self.acq.sum_p[i]);
+
                 if p_sum > p_max {
                     idx = i;
                     p_max = p_sum;
                     p_peak = v_peak;
-                    idx_peak = j_peak;
+                    code_offset_idx = j_peak;
                 }
                 p_total += p_sum;
             }
 
             let doppler_hz = -DOPPLER_SPREAD_HZ + idx as f64 * step_hz;
-            let code_off_sec = idx_peak as f64 / self.code_sp as f64 * self.code_sec;
+            let code_off_sec = code_offset_idx as f64 / self.code_sp as f64 * self.code_sec;
             let p_avg = p_total / self.acq.sum_p[idx].len() as f64 / DOPPLER_SPREAD_BINS as f64;
             let cn0 = 10.0 * ((p_peak - p_avg) / p_avg / self.code_sec).log10();
 
             if cn0 >= CN0_THRESHOLD_LOCKED {
-                self.tracking_start(doppler_hz, cn0, code_off_sec, idx_peak);
+                self.tracking_start(doppler_hz, cn0, code_off_sec, code_offset_idx);
             } else {
                 plot_remove(self.sv);
                 self.idle_start();
@@ -493,11 +491,8 @@ impl Channel {
 
         if self.num_trk_samples % (T_CN0 / self.code_sec) as usize == 0 {
             if self.trk.sum_corr_n > 0.0 {
-                let cn0 = 10.0
-                    * ((self.trk.sum_corr_p - self.trk.sum_corr_n)
-                        / self.trk.sum_corr_n
-                        / self.code_sec)
-                        .log10();
+                let cn0 =
+                    10.0 * (self.trk.sum_corr_p / self.trk.sum_corr_n / self.code_sec).log10();
                 self.trk.cn0 += 0.5 * (cn0 - self.trk.cn0);
             }
             self.trk.sum_corr_n = 0.0;
