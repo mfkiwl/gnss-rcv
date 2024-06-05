@@ -66,7 +66,7 @@ impl Receiver {
             self.period_sp
         };
 
-        let mut iq_vec = (self.read_iq_fn)(self.off_samples, num_samples).unwrap();
+        let mut iq_vec = (self.read_iq_fn)(self.off_samples, num_samples)?;
 
         self.off_samples += num_samples;
         self.cached_iq_vec.append(&mut iq_vec);
@@ -298,8 +298,7 @@ impl Receiver {
     }
 
     pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let samples = self.fetch_samples_msec();
-        let (iq_vec, ts_sec) = samples.unwrap();
+        let (iq_vec, ts_sec) = self.fetch_samples_msec()?;
 
         self.channels
             .par_iter_mut()

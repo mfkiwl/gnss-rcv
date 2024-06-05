@@ -360,7 +360,7 @@ impl Channel {
                 p_total += p_sum;
             }
 
-            let doppler_hz = -DOPPLER_SPREAD_HZ + idx as f64 * step_hz;
+            let doppler_hz = -DOPPLER_SPREAD_HZ + (idx as f64 + 0.5) * step_hz;
             let code_off_sec = code_offset_idx as f64 / self.code_sp as f64 * self.code_sec;
             let p_avg = p_total / self.acq.sum_p[idx].len() as f64 / DOPPLER_SPREAD_BINS as f64;
             let cn0 = 10.0 * ((p_peak - p_avg) / p_avg / self.code_sec).log10();
