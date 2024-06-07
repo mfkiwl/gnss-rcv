@@ -175,7 +175,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("GNSS terminating: {:.2} sec", ts.elapsed().as_secs_f32());
-    println!("processed: {:.2} sec", ts.elapsed().as_secs_f32());
     exit_req.store(true, Ordering::SeqCst);
 
     Ok(())

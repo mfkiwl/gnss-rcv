@@ -1,3 +1,4 @@
+use colored::Colorize;
 use gnss_rs::sv::SV;
 use rayon::prelude::*;
 use rustfft::num_complex::Complex64;
@@ -95,7 +96,17 @@ impl Receiver {
             .collect();
 
         if ephs.len() >= 4 {
+            log::warn!(
+                "t={ts_sec:.3} -- {}",
+                format!("attempting fix with {} SVs", ephs.len()).red()
+            );
+
             self.solver.get_position(ts_sec, &ephs);
+        } else {
+            log::warn!(
+                "t={ts_sec:.3} -- {}",
+                format!("only {} SVs fit", ephs.len()).red()
+            );
         }
         self.last_fix_sec = ts_sec;
     }

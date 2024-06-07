@@ -96,7 +96,7 @@ impl Ephemeris {
             let hi = getbitu(buf, 226, 8);
             let lo = getbitu(buf, 240, 24);
             let v = getbitu2(buf, 226, 8, 240, 24);
-            log::warn!("hi={hi} lo={lo} -- v={v}");
+            log::warn!("hi={hi} lo={lo} -- v={v} a={}", (v as f64 * P2_19).powi(2));
         }
         let sqrt_a = getbitu2(buf, 226, 8, 240, 24) as f64 * P2_19;
         self.toe = getbitu(buf, 270, 16) * 16;

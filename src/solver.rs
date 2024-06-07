@@ -1,4 +1,3 @@
-use colored::Colorize;
 use gnss_rs::sv::SV;
 use gnss_rtk::prelude::{
     AprioriPosition, Candidate, Carrier, Config, Duration, Epoch, InterpolationResult,
@@ -8,15 +7,14 @@ use gnss_rtk::prelude::{
 use crate::ephemeris::Ephemeris;
 
 const SPEED_OF_LIGHT: f64 = 299_792_458.0;
+const EARTH_MU_GPS: f64 = 3.9860058e14; // earth gravitational constant
+const EARTH_ROTATION_RATE: f64 = 7.2921151467e-5;
 
 pub struct PositionSolver {
     cfg: Config,
 }
 
 fn get_eccentric_anomaly(eph: &Ephemeris, t_k: f64) -> f64 {
-    // earth gravitational constant
-    const EARTH_MU_GPS: f64 = 3.9860058e14;
-
     // computed mean motion
     let n0 = (EARTH_MU_GPS / eph.a.powi(3)).sqrt();
     // corrected mean motion
@@ -33,26 +31,26 @@ fn get_eccentric_anomaly(eph: &Ephemeris, t_k: f64) -> f64 {
         e = e + (mk - e + eph.ecc * e.sin()) / (1.0 - eph.ecc * e.cos());
         n_iter += 1;
     }
-    log::warn!("n_iter={n_iter}");
+    log::warn!("n_iter={n_iter} e={e}");
     assert!(n_iter < 20);
 
     e
 }
 
-pub fn compute_sv_position_ecef(eph: &Ephemeris, t: Epoch) -> [f64; 3] {
-    const EARTH_ROTATION_RATE: f64 = 7.2921151467e-5;
-    let mut time_from_eph_t = (t - eph.toe_gpst).to_seconds();
+pub fn compute_sv_position_ecef(eph: &Ephemeris, t: Epoch) -> (f64, f64, f64) {
+    let mut dte = (t - eph.toe_gpst).to_seconds();
 
-    log::warn!("{}: delta-t={time_from_eph_t} toe={}", eph.sv, eph.toe_gpst);
+    log::warn!("{}: now={t}", eph.sv);
+    log::warn!("{}: toe={} delta-t={dte} ", eph.sv, eph.toe_gpst);
 
-    if time_from_eph_t > 302400.0 {
-        time_from_eph_t -= 604800.0;
+    if dte > 302400.0 {
+        dte -= 604800.0;
     }
-    if time_from_eph_t < -302400.0 {
-        time_from_eph_t += 604800.0;
+    if dte < -302400.0 {
+        dte += 604800.0;
     }
 
-    let ecc_anomaly = get_eccentric_anomaly(eph, time_from_eph_t);
+    let ecc_anomaly = get_eccentric_anomaly(eph, dte);
 
     let v_k =
         ((1.0 - (eph.ecc * eph.ecc)).sqrt() * ecc_anomaly.sin()).atan2(ecc_anomaly.cos() - eph.ecc);
@@ -64,13 +62,13 @@ pub fn compute_sv_position_ecef(eph: &Ephemeris, t: Epoch) -> [f64; 3] {
 
     let uk = phi_k + duk;
     let rk = eph.a * (1.0 - eph.ecc * ecc_anomaly.cos()) + drk;
-    let ik = eph.i0 + eph.i_dot * time_from_eph_t + dik;
+    let ik = eph.i0 + eph.i_dot * dte + dik;
 
     let orb_plane_x = rk * uk.cos();
     let orb_plane_y = rk * uk.sin();
 
-    let omega = eph.omg0 + (eph.omg_dot - EARTH_ROTATION_RATE) * time_from_eph_t
-        - EARTH_ROTATION_RATE * eph.toe as f64;
+    let omega =
+        eph.omg0 + (eph.omg_dot - EARTH_ROTATION_RATE) * dte - EARTH_ROTATION_RATE * eph.toe as f64;
 
     let ecef_x = orb_plane_x * omega.cos() - orb_plane_y * ik.cos() * omega.sin();
     let ecef_y = orb_plane_x * omega.sin() + orb_plane_y * ik.cos() * omega.cos();
@@ -82,7 +80,7 @@ pub fn compute_sv_position_ecef(eph: &Ephemeris, t: Epoch) -> [f64; 3] {
         (ecef_x * ecef_x + ecef_y * ecef_y + ecef_z * ecef_z).sqrt() / 1000.0
     );
 
-    [ecef_x, ecef_y, ecef_z]
+    (ecef_x, ecef_y, ecef_z)
 }
 
 fn get_tropo_iono_bias() -> (TroposphereBias, IonosphereBias) {
@@ -110,9 +108,6 @@ impl PositionSolver {
         // somewhere in the middle of Lake Leman
         let initial = AprioriPosition::from_geo(Vector3::new(46.5, 6.6, 0.0));
         let mut pool: Vec<Candidate> = vec![];
-        let mut ts_ref = f64::MAX;
-
-        log::warn!("t={ts_sec:.3} -- {}", format!("attempting fix").red());
 
         /*
          * https://www.insidegnss.com/auto/IGM_janfeb12-Solutions.pdf
@@ -125,40 +120,36 @@ impl PositionSolver {
          *                        tow                         |
          * sat2 -------------------+[....][....][....][....][.| obs
          *
-         *
          *  sat0      []                   ~0
          *  sat1      [------]
          *  sat2      [-------------]
          */
 
-        for eph in ephs {
-            let sv_ts = eph.tow_gpst.to_gpst_seconds() + ts_sec - eph.ts_sec;
-
-            if sv_ts < ts_ref {
-                ts_ref = sv_ts;
-            }
-        }
+        let ts_ref = ephs.iter().map(|e| e.ts_sec).reduce(f64::min).unwrap();
+        ephs.iter()
+            .for_each(|e| assert_eq!(ephs[0].tow_gpst, e.tow_gpst));
+        let now_gpst = ephs[0].tow_gpst + Duration::from_seconds(ts_sec - ephs[0].ts_sec);
 
         for eph in ephs {
-            const BASE_DELAY: f64 = 68.802e-3;
-            let sv_ts = eph.tow_gpst.to_gpst_seconds() + ts_sec - eph.ts_sec;
-            let pseudo_range_sec = sv_ts - ts_ref;
+            let pseudo_range_sec = eph.ts_sec - ts_ref;
 
             log::warn!(
-                "{} - sv_ts={sv_ts} pseudo_range_sec={pseudo_range_sec}",
-                eph.sv
+                "{} - tow={} eph.ts={} pseudo_range_sec={pseudo_range_sec}",
+                eph.sv,
+                eph.tow,
+                eph.ts_sec,
             );
             assert!(pseudo_range_sec >= 0.0);
 
             let candidate = Candidate::new(
-                SV::new(gnss_rs::constellation::Constellation::GPS, eph.sv.prn),
-                Epoch::from_gpst_seconds(sv_ts),
+                eph.sv,
+                now_gpst,
                 Duration::from_seconds(0.0), // TBD
                 Some(Duration::from_seconds(eph.tgd)),
                 vec![Observation {
                     carrier: Carrier::L1,
-                    value: SPEED_OF_LIGHT * (BASE_DELAY + pseudo_range_sec),
-                    snr: Some(35.0), // XXX
+                    value: SPEED_OF_LIGHT * pseudo_range_sec,
+                    snr: Some(35.0),
                 }],
                 vec![], // not required for SPP
                 vec![], // not used
@@ -168,16 +159,15 @@ impl PositionSolver {
         }
 
         let (tropo_bias, iono_bias) = get_tropo_iono_bias();
-        let ts_solve = Epoch::from_gpst_seconds(ts_ref);
         let sv_interp = |t: Epoch, sv: SV, _size: usize| {
             let eph = ephs.iter().find(|&&e| e.sv == sv).unwrap();
             let pos = compute_sv_position_ecef(eph, t);
 
-            Some(InterpolationResult::from_apc_position(pos.into()))
+            Some(InterpolationResult::from_apc_position(pos))
         };
 
         let mut solver = Solver::new(&self.cfg, initial, sv_interp).expect("Solver issue");
-        let solutions = solver.resolve(ts_solve, &pool, &iono_bias, &tropo_bias);
+        let solutions = solver.resolve(now_gpst, &pool, &iono_bias, &tropo_bias);
         let res = solutions.is_ok();
         if res {
             log::warn!("POSITION: {solutions:?}");

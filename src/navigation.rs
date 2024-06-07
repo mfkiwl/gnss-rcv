@@ -280,10 +280,21 @@ impl Channel {
 
     fn nav_decode_lnav_subframe(&mut self) -> u32 {
         let buf = &self.nav.data[0..];
-        let subframe_id = getbitu(buf, 49, 3);
-        let _alert = getbitu(buf, 47, 1);
-        let _anti_spoof = getbitu(buf, 48, 1);
+        let preamble = getbitu(buf, 0, 8);
+        assert_eq!(preamble, 0x8b);
         self.nav.eph.tlm = getbitu(buf, 8, 14);
+        let isf = getbitu(buf, 22, 1);
+        let rsvd = getbitu(buf, 23, 1);
+        let alert = getbitu(buf, 47, 1);
+        let anti_spoof = getbitu(buf, 48, 1);
+        let subframe_id = getbitu(buf, 49, 3);
+        let zero = getbitu(buf, 58, 2);
+        assert_eq!(zero, 0);
+
+        log::warn!(
+            "tlm {:#02x} alert={alert} anti_spoof={anti_spoof} rsvd={rsvd} isf={isf}",
+            self.nav.eph.tlm
+        );
 
         match subframe_id {
             1 => self.nav_decode_lnav_subframe1(),

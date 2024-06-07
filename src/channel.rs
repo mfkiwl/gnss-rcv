@@ -9,7 +9,7 @@ const PI: f64 = std::f64::consts::PI;
 use crate::code::Code;
 use crate::navigation::Navigation;
 use crate::plots::plot_iq_scatter;
-use crate::plots::plot_remove;
+//use crate::plots::plot_remove;
 use crate::plots::plot_time_graph;
 use crate::util::calc_correlation;
 use crate::util::doppler_shift;
@@ -31,7 +31,7 @@ const DOPPLER_SPREAD_HZ: f64 = 8000.0;
 const DOPPLER_SPREAD_BINS: usize = 50;
 const HISTORY_NUM: usize = 20000;
 const CN0_THRESHOLD_LOCKED: f64 = 35.0;
-const CN0_THRESHOLD_LOST: f64 = 32.0;
+const CN0_THRESHOLD_LOST: f64 = 29.0;
 
 #[derive(PartialEq, Debug)]
 enum State {
@@ -377,7 +377,7 @@ impl Channel {
             if cn0 >= CN0_THRESHOLD_LOCKED {
                 self.tracking_start(doppler_hz, cn0, code_off_sec, code_offset_idx);
             } else {
-                plot_remove(self.sv);
+                //plot_remove(self.sv);
                 self.idle_start();
             }
             self.acquisition_init();
