@@ -37,8 +37,28 @@ pub fn plot_remove(sv: SV) {
 }
 
 pub fn plot_time_graph(sv: SV, name: &str, time_series: &[f64], y_delta: f64, color: &RGBColor) {
+    plot_time_graph_with_sz(
+        sv,
+        name,
+        time_series,
+        y_delta,
+        color,
+        PLOT_SIZE_X,
+        PLOT_SIZE_Y,
+    );
+}
+
+pub fn plot_time_graph_with_sz(
+    sv: SV,
+    name: &str,
+    time_series: &[f64],
+    y_delta: f64,
+    color: &RGBColor,
+    size_x: u32,
+    size_y: u32,
+) {
     let file_name = format!("{}/sat-{}-{}.png", PLOT_FOLDER, sv.prn, name);
-    let root_area = BitMapBackend::new(&file_name, (PLOT_SIZE_X, PLOT_SIZE_Y)).into_drawing_area();
+    let root_area = BitMapBackend::new(&file_name, (size_x, size_y)).into_drawing_area();
     root_area.fill(&WHITE).unwrap();
 
     if time_series.len() < 10 {

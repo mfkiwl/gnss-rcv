@@ -146,6 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if !opt.hostname.is_empty() {
         let mut net = RtlSdrTcp::new(&opt.hostname, exit_req.clone(), sig, opt.fs)?;
 
+        log::warn!("Using rtl_tcp backend: {}", opt.hostname);
         read_fn = Box::new(move |_off_samples, num_samples| net.read_iq_data(num_samples));
     } else {
         let mut recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
