@@ -5,7 +5,7 @@ use crate::{
     channel::Channel,
     constants::{P2_24, P2_27, P2_30, P2_50},
     ephemeris::Ephemeris,
-    util::{bmatch_n, bmatch_r, getbits, getbits2, getbitu, hex_str, pack_bits, xor_bits},
+    util::{bmatch_n, bmatch_r, getbits, getbits2, getbitu, hex_str, setbitu, xor_bits},
 };
 use colored::Colorize;
 use gnss_rs::sv::SV;
@@ -16,8 +16,8 @@ const SECS_PER_WEEK: u32 = 7 * 24 * 60 * 60;
 const SDR_MAX_NSYM: usize = 18000;
 const SDR_MAX_DATA: usize = 4096;
 
-const THRESHOLD_SYNC: f64 = 0.4;
-const THRESHOLD_LOST: f64 = 0.03;
+const THRESHOLD_SYNC: f64 = 0.4; // 0.02
+const THRESHOLD_LOST: f64 = 0.03; // 0.002
 
 static GPS_ALMANAC: Lazy<Mutex<Vec<Almanac>>> =
     Lazy::new(|| Mutex::new(vec![Almanac::default(); 32]));
@@ -39,7 +39,6 @@ pub struct Navigation {
     ssync: usize,
     fsync: usize,
     sync_state: SyncState,
-    seq: u32,
     num_err: usize,
     syms: Vec<u8>,
     tsyms: Vec<f64>,
@@ -66,7 +65,6 @@ impl Navigation {
         self.ssync = 0;
         self.fsync = 0;
         self.sync_state = SyncState::NORMAL;
-        self.seq = 0;
         self.num_err = 0;
 
         for i in 0..SDR_MAX_NSYM {
@@ -79,13 +77,16 @@ impl Navigation {
 impl Channel {
     fn nav_mean_ip(&self, n: usize) -> f64 {
         let mut p = 0.0;
-        let len = self.hist.corr_p_hist.len();
+        let len = self.hist.corr_p.len();
+
         for i in 0..n {
             // weird math
-            let c = self.hist.corr_p_hist[len - i - 1];
-            p += (c.re / c.norm() - p) / (1.0 + i as f64);
+            let c = self.hist.corr_p[len - n + i];
+            //p += (c.re / c.norm() - p) / (1 + i) as f64;
+            p += c.re / c.norm();
         }
-        p
+        p / n as f64
+        //p
     }
     fn nav_add_symbol(&mut self, sym: u8, ts: f64) {
         self.nav.syms.rotate_left(1);
@@ -119,19 +120,25 @@ impl Channel {
 
     fn nav_sync_symbol(&mut self, num: usize) -> bool {
         if self.nav.ssync == 0 {
-            let n = if num <= 2 { 1 } else { 2 };
-            let len = self.hist.corr_p_hist.len();
+            let n = if num <= 2 { 1 } else { num - 1 };
+            let len = self.hist.corr_p.len();
 
             let mut p = 0.0;
+            let mut r = 0.0;
             for i in 0..2 * n {
                 let code = if i < n { -1.0 } else { 1.0 };
-                let corr = self.hist.corr_p_hist[len - 2 * n + i];
-                p += corr.re * code / corr.norm(); // costly!
+                let corr = self.hist.corr_p[len - 2 * n + i];
+                let corr_re = corr.re / corr.norm(); // XXX: shouldn't be required
+
+                p += corr_re * code;
+                r += corr_re.abs();
             }
 
             p /= 2.0 * n as f64;
+            r /= 2.0 * n as f64;
+            //log::warn!("{} p={p} r={r} threshold={}", self.sv, THRESHOLD_SYNC);
 
-            if p.abs() >= THRESHOLD_SYNC {
+            if p.abs() >= r && r >= THRESHOLD_SYNC {
                 self.nav.ssync = self.num_trk_samples - n;
                 log::info!("{}: SYNC: p={:.5} ssync={}", self.sv, p, self.nav.ssync);
             }
@@ -283,18 +290,13 @@ impl Channel {
         let preamble = getbitu(buf, 0, 8);
         assert_eq!(preamble, 0x8b);
         self.nav.eph.tlm = getbitu(buf, 8, 14);
-        let isf = getbitu(buf, 22, 1);
-        let rsvd = getbitu(buf, 23, 1);
-        let alert = getbitu(buf, 47, 1);
-        let anti_spoof = getbitu(buf, 48, 1);
+        let _isf = getbitu(buf, 22, 1);
+        let _rsvd = getbitu(buf, 23, 1);
+        let _alert = getbitu(buf, 47, 1);
+        let _anti_spoof = getbitu(buf, 48, 1);
         let subframe_id = getbitu(buf, 49, 3);
         let zero = getbitu(buf, 58, 2);
         assert_eq!(zero, 0);
-
-        log::warn!(
-            "tlm {:#02x} alert={alert} anti_spoof={anti_spoof} rsvd={rsvd} isf={isf}",
-            self.nav.eph.tlm
-        );
 
         match subframe_id {
             1 => self.nav_decode_lnav_subframe1(),
@@ -330,17 +332,15 @@ impl Channel {
         let syms_len = self.nav.syms.len();
         let syms = &self.nav.syms[syms_len - 308..syms_len - 8];
 
-        for i in 0..300 {
+        for i in 0..syms.len() {
             buf[i] = syms[i] ^ rev;
         }
 
-        if Self::nav_test_lnav_parity(&buf[0..]) {
+        if Self::nav_test_lnav_parity(&buf[0..], &mut self.nav.data) {
             log::info!("{}: PARITY OK", self.sv);
             self.nav.fsync = self.num_trk_samples;
             self.nav.sync_state = sync;
-            pack_bits(&buf, 0, &mut self.nav.data);
 
-            self.nav.seq = getbitu(&self.nav.data[0..], 30, 17); // tow (x 6s)
             self.nav.count_ok += 1;
             self.nav.time_data_sec = self.ts_sec - 20e-3 * 308.0;
 
@@ -357,8 +357,8 @@ impl Channel {
         }
     }
 
-    fn nav_test_lnav_parity(syms: &[u8]) -> bool {
-        let mask = [
+    fn nav_test_lnav_parity(syms: &[u8], out: &mut [u8]) -> bool {
+        const MASK: [u32; 6] = [
             0x2EC7CD2, 0x1763E69, 0x2BB1F34, 0x15D8F9A, 0x1AEC7CD, 0x22DEA27,
         ];
         assert_eq!(syms.len(), 300);
@@ -369,15 +369,17 @@ impl Channel {
                 data = (data << 1) | syms[i * 30 + j] as u32;
             }
             if data & (1 << 30) != 0 {
-                data = data ^ 0x3FFFFFC0;
+                data ^= 0x3FFFFFC0;
             }
             for j in 0..6 {
-                let v0 = (data >> 6) & mask[j];
+                let v0 = (data >> 6) & MASK[j];
                 let v1: u8 = ((data >> (5 - j)) & 1) as u8;
                 if xor_bits(v0) != v1 {
                     return false;
                 }
             }
+            setbitu(out, 30 * i, 24, (data >> 6) & 0xFFFFFF);
+            setbitu(out, 30 * i + 24, 6, 0);
         }
         true
     }
@@ -399,13 +401,14 @@ impl Channel {
 
         if self.nav.fsync > 0 {
             if self.num_trk_samples == self.nav.fsync + 6000 {
-                let sync_state = self.nav_get_frame_sync_state(&preambule[0..]);
-                if sync_state == self.nav.sync_state {
-                    self.nav_decode_lnav(sync_state);
-                } else {
-                    self.nav.fsync = 0;
-                    self.nav.sync_state = SyncState::NORMAL;
+                let sync = self.nav_get_frame_sync_state(&preambule[0..]);
+                if sync == self.nav.sync_state {
+                    self.nav_decode_lnav(sync);
                 }
+            } else if self.num_trk_samples > self.nav.fsync + 6000 {
+                self.nav.fsync = 0;
+                self.nav.ssync = 0;
+                self.nav.sync_state = SyncState::NORMAL;
             }
         } else if self.num_trk_samples >= 20 * 308 + 1000 {
             let sync = self.nav_get_frame_sync_state(&preambule[0..]);

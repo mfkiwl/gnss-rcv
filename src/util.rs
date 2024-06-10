@@ -119,14 +119,6 @@ pub fn getbits2(buf: &[u8], p1: u32, l1: u32, p2: u32, l2: u32) -> i32 {
     }
 }
 
-pub fn pack_bits(bits: &[u8], nz: usize, dst: &mut Vec<u8>) {
-    let len = (bits.len() + nz + 7) / 8;
-    dst[0..len].fill(0);
-    for i in nz..nz + bits.len() {
-        dst[i / 8] |= bits[i - nz] << (7 - i % 8);
-    }
-}
-
 pub fn hex_str(data: &[u8], num_bits: usize) -> String {
     let mut s = String::new();
     for i in 0..(num_bits + 7) / 8 {
@@ -174,4 +166,20 @@ pub fn bmatch_n(bits0: &[u8], bits1: &[u8]) -> bool {
         }
     }
     true
+}
+
+pub fn setbitu(buf: &mut [u8], pos: usize, len: usize, data: u32) {
+    let mut mask = 1u32 << (len - 1);
+    if len > 32 {
+        return;
+    }
+    for i in pos..pos + len {
+        let bit = 1u8 << (7 - i % 8);
+        if data & mask != 0 {
+            buf[i / 8] |= bit;
+        } else {
+            buf[i / 8] &= !bit;
+        }
+        mask = mask >> 1;
+    }
 }

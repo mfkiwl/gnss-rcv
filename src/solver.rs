@@ -126,8 +126,6 @@ impl PositionSolver {
          */
 
         let ts_ref = ephs.iter().map(|e| e.ts_sec).reduce(f64::min).unwrap();
-        ephs.iter()
-            .for_each(|e| assert_eq!(ephs[0].tow_gpst, e.tow_gpst));
         let now_gpst = ephs[0].tow_gpst + Duration::from_seconds(ts_sec - ephs[0].ts_sec);
 
         for eph in ephs {
