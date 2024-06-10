@@ -189,7 +189,7 @@ impl Channel {
                 log::warn!("{}: {:?}", self.sv, alm);
             } else if svid == 63 {
                 /* page 25 */
-                const ARRAY_SVCONF_IDX: [u32; 32] = [
+                const ARRAY_SVCONF_IDX: [usize; 32] = [
                     68, 72, 76, 80, 90, 94, 98, 102, 106, 110, 120, 124, 128, 132, 136, 140, 150,
                     154, 158, 162, 166, 170, 180, 184, 188, 192, 196, 200, 210, 214, 218, 222,
                 ];
@@ -201,7 +201,7 @@ impl Channel {
                     alm.svconf = getbitu(buf, pos, 4);
                 }
 
-                const ARRAY_SVH_IDX: [u32; 8] = [228, 240, 246, 252, 258, 270, 276, 282];
+                const ARRAY_SVH_IDX: [usize; 8] = [228, 240, 246, 252, 258, 270, 276, 282];
                 for sv in 25..=32 {
                     let mut alm = alm_array[sv - 1];
                     let pos = ARRAY_SVH_IDX[sv - 25];
@@ -256,7 +256,7 @@ impl Channel {
                 let toas = getbitu(buf, 68, 8) * 4096;
                 let week = getbitu(buf, 76, 8) + 2048;
 
-                const ARRAY_SVH_IDX: [u32; 24] = [
+                const ARRAY_SVH_IDX: [usize; 24] = [
                     90, 96, 102, 108, 120, 126, 132, 138, 150, 156, 162, 168, 180, 186, 192, 198,
                     210, 216, 222, 228, 240, 246, 252, 258,
                 ];

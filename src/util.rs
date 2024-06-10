@@ -85,16 +85,16 @@ pub fn doppler_shift(iq_vec: &mut Vec<Complex64>, doppler_hz: f64, phi: f64, fs:
     }
 }
 
-pub fn getbitu(buf: &[u8], pos: u32, len: u32) -> u32 {
+pub fn getbitu(buf: &[u8], pos: usize, len: usize) -> u32 {
     assert!(len <= 32);
     let mut bits = 0;
     for i in pos..pos + len {
-        bits = (bits << 1) | ((buf[(i / 8) as usize] >> (7 - i % 8)) & 1) as u32;
+        bits = (bits << 1) | ((buf[i / 8] >> (7 - i % 8)) & 1) as u32;
     }
     bits
 }
 
-pub fn getbits(buf: &[u8], pos: u32, len: u32) -> i32 {
+pub fn getbits(buf: &[u8], pos: usize, len: usize) -> i32 {
     let bits = getbitu(buf, pos, len);
 
     let sign = (1 << (len - 1)) & bits;
@@ -103,14 +103,14 @@ pub fn getbits(buf: &[u8], pos: u32, len: u32) -> i32 {
     res as i32
 }
 
-pub fn getbitu2(buf: &[u8], p1: u32, l1: u32, p2: u32, l2: u32) -> u32 {
+pub fn getbitu2(buf: &[u8], p1: usize, l1: usize, p2: usize, l2: usize) -> u32 {
     assert!(l1 + l2 <= 32);
     let hi = getbitu(buf, p1, l1);
     let lo = getbitu(buf, p2, l2);
     (hi << l2) + lo
 }
 
-pub fn getbits2(buf: &[u8], p1: u32, l1: u32, p2: u32, l2: u32) -> i32 {
+pub fn getbits2(buf: &[u8], p1: usize, l1: usize, p2: usize, l2: usize) -> i32 {
     assert!(l1 + l2 <= 32);
     if getbitu(buf, p1, 1) != 0 {
         ((getbits(buf, p1, l1) << l2) + getbitu(buf, p2, l2) as i32) as i32
@@ -141,7 +141,7 @@ pub fn xor_bits(v: u32) -> u8 {
         0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
     ];
 
-    let bytes: [u8; 4] = v.to_le_bytes();
+    let bytes = v.to_le_bytes();
     xor_8b[bytes[0] as usize]
         ^ xor_8b[bytes[1] as usize]
         ^ xor_8b[bytes[2] as usize]
