@@ -40,10 +40,8 @@ pub struct Navigation {
     fsync: usize,
     sync_state: SyncState,
     num_err: usize,
-    syms: Vec<u8>,
-    tsyms: Vec<f64>,
-    data: Vec<u8>,
-    time_data_sec: f64,
+    syms: Vec<u8>, // navigation bits
+    data: Vec<u8>, // navigation data from bits
     count_ok: usize,
     count_err: usize,
     pub eph: Ephemeris,
@@ -54,7 +52,6 @@ impl Navigation {
         Self {
             sync_state: SyncState::NORMAL,
             syms: vec![0; SDR_MAX_NSYM],
-            tsyms: vec![0.0; SDR_MAX_NSYM],
             data: vec![0u8; SDR_MAX_DATA],
             eph: Ephemeris::new(sv),
             ..Default::default()
@@ -69,7 +66,6 @@ impl Navigation {
 
         for i in 0..SDR_MAX_NSYM {
             self.syms[i] = 0;
-            self.tsyms[i] = 0.0;
         }
     }
 }
@@ -88,12 +84,9 @@ impl Channel {
         p / n as f64
         //p
     }
-    fn nav_add_symbol(&mut self, sym: u8, ts: f64) {
+    fn nav_add_symbol(&mut self, sym: u8) {
         self.nav.syms.rotate_left(1);
         *self.nav.syms.last_mut().unwrap() = sym;
-
-        self.nav.tsyms.rotate_left(1);
-        *self.nav.tsyms.last_mut().unwrap() = ts;
     }
 
     fn nav_get_frame_sync_state(&self, preambule: &[u8]) -> SyncState {
@@ -147,7 +140,7 @@ impl Channel {
             let p = self.nav_mean_ip(num);
             if p.abs() >= THRESHOLD_LOST {
                 let sym: u8 = if p >= 0.0 { 1 } else { 0 };
-                self.nav_add_symbol(sym, self.ts_sec);
+                self.nav_add_symbol(sym);
                 return true;
             } else {
                 self.nav.ssync = 0;
@@ -343,13 +336,10 @@ impl Channel {
             log::info!("{}: PARITY OK", self.sv);
             self.nav.fsync = self.num_trk_samples;
             self.nav.sync_state = sync;
-
             self.nav.count_ok += 1;
-            self.nav.time_data_sec = self.ts_sec - 20e-3 * 308.0;
 
             let id = self.nav_decode_lnav_subframe();
-
-            let hex_str = hex_str(&self.nav.data[0..], 300);
+            let hex_str = hex_str(&self.nav.data[0..300]);
             log::info!("{}: LNAV: id={id} -- {}", self.sv, hex_str);
         } else {
             self.nav.fsync = 0;
@@ -405,12 +395,12 @@ impl Channel {
         }
 
         if self.nav.fsync > 0 {
-            if self.num_trk_samples == self.nav.fsync + 6000 {
+            if self.num_trk_samples == self.nav.fsync + 300 * 20 {
                 let sync = self.nav_get_frame_sync_state(preambule);
                 if sync == self.nav.sync_state {
                     self.nav_decode_lnav(sync);
                 }
-            } else if self.num_trk_samples > self.nav.fsync + 6000 {
+            } else if self.num_trk_samples > self.nav.fsync + 300 * 20 {
                 self.nav.fsync = 0;
                 self.nav.ssync = 0;
                 self.nav.sync_state = SyncState::NORMAL;

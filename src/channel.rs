@@ -9,7 +9,6 @@ const PI: f64 = std::f64::consts::PI;
 use crate::code::Code;
 use crate::navigation::Navigation;
 use crate::plots::plot_iq_scatter;
-//use crate::plots::plot_remove;
 use crate::plots::plot_time_graph;
 use crate::plots::plot_time_graph_with_sz;
 use crate::util::calc_correlation;
@@ -384,7 +383,6 @@ impl Channel {
             if cn0 >= CN0_THRESHOLD_LOCKED {
                 self.tracking_start(doppler_hz, cn0, code_off_sec, code_offset_idx);
             } else {
-                //plot_remove(self.sv);
                 self.idle_start();
             }
             self.acquisition_init();
