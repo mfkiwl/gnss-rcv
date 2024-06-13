@@ -5,7 +5,7 @@ use crate::{
     channel::Channel,
     constants::{P2_24, P2_27, P2_30, P2_50},
     ephemeris::Ephemeris,
-    util::{bmatch_n, bmatch_r, getbits, getbits2, getbitu, hex_str, setbitu, xor_bits},
+    util::{bits_equal, bits_opposed, getbits, getbits2, getbitu, hex_str, setbitu, xor_bits},
 };
 use colored::Colorize;
 use gnss_rs::sv::SV;
@@ -22,7 +22,7 @@ const THRESHOLD_LOST: f64 = 0.03; // 0.002
 static GPS_ALMANAC: Lazy<Mutex<Vec<Almanac>>> =
     Lazy::new(|| Mutex::new(vec![Almanac::default(); 32]));
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum SyncState {
     NORMAL,
     REVERSED,
@@ -99,23 +99,24 @@ impl Channel {
     fn nav_get_frame_sync_state(&self, preambule: &[u8]) -> SyncState {
         let bits = &self.nav.syms[SDR_MAX_NSYM - 308..];
         let preambule_len = preambule.len();
+        let bits_beg = &bits[0..preambule_len];
+        let bits_end = &bits[300..300 + preambule_len];
+        let mut sync_state = SyncState::NONE;
 
-        assert!(bits.len() >= preambule_len);
-
-        if bmatch_n(preambule, &bits[0..preambule_len])
-            && bmatch_n(preambule, &bits[300..300 + preambule_len])
-        {
-            log::info!("{}: FRAME SYNC (N): ts={:.3}", self.sv, self.ts_sec);
-            return SyncState::NORMAL;
+        if bits_equal(preambule, bits_beg) && bits_equal(preambule, bits_end) {
+            sync_state = SyncState::NORMAL;
+        } else if bits_opposed(preambule, bits_beg) && bits_opposed(preambule, bits_end) {
+            sync_state = SyncState::REVERSED;
         }
-        if bmatch_r(preambule, &bits[0..preambule_len])
-            && bmatch_r(preambule, &bits[300..300 + preambule_len])
-        {
-            log::info!("{}: FRAME SYNC (R): ts={:.3}", self.sv, self.ts_sec);
-            return SyncState::REVERSED;
+        if sync_state != SyncState::NONE {
+            log::info!(
+                "{}: FRAME SYNC {sync_state:?}: ts={:.3}",
+                self.sv,
+                self.ts_sec
+            );
         }
 
-        SyncState::NONE
+        sync_state
     }
 
     fn nav_sync_symbol(&mut self, num: usize) -> bool {
@@ -391,7 +392,9 @@ impl Channel {
     }
 
     pub fn nav_decode(&mut self) {
-        let preambule: [u8; 8] = [1, 0, 0, 0, 1, 0, 1, 1];
+        const PREAMBULE: [u8; 8] = [1, 0, 0, 0, 1, 0, 1, 1];
+        let preambule = &PREAMBULE[0..];
+
         if self.sv.prn >= 120 && self.sv.prn <= 158 {
             self.nav_decode_sbas();
             return;
@@ -403,7 +406,7 @@ impl Channel {
 
         if self.nav.fsync > 0 {
             if self.num_trk_samples == self.nav.fsync + 6000 {
-                let sync = self.nav_get_frame_sync_state(&preambule[0..]);
+                let sync = self.nav_get_frame_sync_state(preambule);
                 if sync == self.nav.sync_state {
                     self.nav_decode_lnav(sync);
                 }
@@ -413,7 +416,7 @@ impl Channel {
                 self.nav.sync_state = SyncState::NORMAL;
             }
         } else if self.num_trk_samples >= 20 * 308 + 1000 {
-            let sync = self.nav_get_frame_sync_state(&preambule[0..]);
+            let sync = self.nav_get_frame_sync_state(preambule);
             if sync != SyncState::NONE {
                 self.nav_decode_lnav(sync);
             }

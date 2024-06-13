@@ -129,7 +129,7 @@ pub fn hex_str(data: &[u8], num_bits: usize) -> String {
 }
 
 pub fn xor_bits(v: u32) -> u8 {
-    let xor_8b = [
+    const XOR_8B: [u8; 256] = [
         0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0,
         0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1,
         0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 0, 0, 1, 1, 0,
@@ -141,31 +141,19 @@ pub fn xor_bits(v: u32) -> u8 {
         0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
     ];
 
-    let bytes = v.to_le_bytes();
-    xor_8b[bytes[0] as usize]
-        ^ xor_8b[bytes[1] as usize]
-        ^ xor_8b[bytes[2] as usize]
-        ^ xor_8b[bytes[3] as usize]
+    let bytes = v.to_le_bytes().map(|v| v as usize);
+
+    XOR_8B[bytes[0]] ^ XOR_8B[bytes[1]] ^ XOR_8B[bytes[2]] ^ XOR_8B[bytes[3]]
 }
 
-pub fn bmatch_r(bits0: &[u8], bits1: &[u8]) -> bool {
-    assert_eq!(bits0.len(), bits1.len());
-    for i in 0..bits0.len() {
-        if bits0[i] == bits1[i] {
-            return false;
-        }
-    }
-    true
+pub fn bits_opposed(bits0: &[u8], bits1: &[u8]) -> bool {
+    let bits1_rev: Vec<u8> = bits1.iter().map(|v| 1 - v).collect();
+    bits_equal(bits0, bits1_rev.as_slice())
 }
 
-pub fn bmatch_n(bits0: &[u8], bits1: &[u8]) -> bool {
+pub fn bits_equal(bits0: &[u8], bits1: &[u8]) -> bool {
     assert_eq!(bits0.len(), bits1.len());
-    for i in 0..bits0.len() {
-        if bits0[i] != bits1[i] {
-            return false;
-        }
-    }
-    true
+    bits0 == bits1
 }
 
 pub fn setbitu(buf: &mut [u8], pos: usize, len: usize, data: u32) {
