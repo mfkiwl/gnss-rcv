@@ -95,19 +95,16 @@ impl Receiver {
             .map(|ch| ch.nav.eph)
             .collect();
 
-        if ephs.len() >= 4 {
-            log::warn!(
-                "t={ts_sec:.3} -- {}",
-                format!("attempting fix with {} SVs", ephs.len()).red()
-            );
-
-            self.solver.get_position(ts_sec, &ephs);
-        } else {
-            log::warn!(
-                "t={ts_sec:.3} -- {}",
-                format!("only {} SVs fit", ephs.len()).red()
-            );
+        if ephs.len() < 4 {
+            return;
         }
+
+        log::warn!(
+            "t={ts_sec:.3} -- {}",
+            format!("attempting fix with {} SVs", ephs.len()).red()
+        );
+
+        self.solver.compute_position(ts_sec, &ephs);
         self.last_fix_sec = ts_sec;
     }
 

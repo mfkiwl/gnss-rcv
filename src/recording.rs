@@ -88,11 +88,13 @@ impl IQRecording {
 
         let off_file = off_samples * sample_size;
 
-        log::debug!(
-            "read_iq_file: off_samples={} num_samples={}",
-            off_samples,
-            num_samples
-        );
+        if false {
+            log::debug!(
+                "read_iq_file: off_samples={} num_samples={}",
+                off_samples,
+                num_samples
+            );
+        }
 
         let _ = reader.seek(SeekFrom::Current(off_file as i64)).unwrap();
 
@@ -181,12 +183,14 @@ impl IQRecording {
         assert_eq!(n, num_samples);
 
         let bw = n as f64 * buf_size as f64 / 1024.0 / 1024.0 / ts.elapsed().as_secs_f64();
-        log::debug!(
-            "read_from_file: {} msec -- bandwidth: {:.1} MB/sec -- num_read_ops={}",
-            ts.elapsed().as_millis(),
-            bw,
-            n
-        );
+        if false {
+            log::debug!(
+                "read_from_file: {} msec -- bandwidth: {:.1} MB/sec -- num_read_ops={}",
+                ts.elapsed().as_millis(),
+                bw,
+                n
+            );
+        }
 
         Ok(iq_vec)
     }

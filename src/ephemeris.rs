@@ -1,3 +1,4 @@
+use colored::Colorize;
 use gnss_rs::sv::SV;
 use gnss_rtk::prelude::Epoch;
 
@@ -10,6 +11,8 @@ use crate::{
 pub struct Ephemeris {
     pub sv: SV,
     pub tow: u32,
+    pub cn0: f64,
+    pub code_off_sec: f64,
     pub ts_sec: f64, // receiver time for 1st subframe
     pub tow_gpst: Epoch,
     pub toe_gpst: Epoch, // cf toe
@@ -69,7 +72,8 @@ impl Ephemeris {
         self.f0 = getbits(buf, 270, 22) as f64 * P2_31;
 
         log::warn!(
-            "{sv}: subframe-1 tow={} week={} sva={} svh={} iodc={} tgd={:+e} toc={} a0={:+e} a1={:+e} a2={:+e}",
+            "{sv}: {} tow={} week={} sva={} svh={} iodc={} tgd={:+e} toc={} a0={:+e} a1={:+e} a2={:+e}",
+            format!("subframe-1").blue(),
             self.tow,
             self.week,
             self.sva,
@@ -98,7 +102,8 @@ impl Ephemeris {
         self.a = sqrt_a * sqrt_a;
 
         log::warn!(
-            "{sv}: subframe-2 tow={} a={} iode={} crs={} crc={} cuc={:+e} cus={:+e} ecc={} m0={} toe={}",
+            "{sv}: {} tow={} a={} iode={} crs={} crc={} cuc={:+e} cus={:+e} ecc={} m0={} toe={}",
+            format!("subframe-2").blue(),
             self.tow,
             self.a,
             self.iode,
@@ -125,7 +130,8 @@ impl Ephemeris {
         self.i_dot = getbits(buf, 278, 14) as f64 * P2_43 * SC2RAD;
 
         log::warn!(
-            "{sv}: subframe-3 tow={} cic={:+e} cis={:+e} omg={} omg0={} omgd={:+e} i0={} idot={:+e}",
+            "{sv}: {} tow={} cic={:+e} cis={:+e} omg={} omg0={} omgd={:+e} i0={} idot={:+e}",
+            format!("subframe-3").blue(),
             self.tow,
             self.cic,
             self.cis,

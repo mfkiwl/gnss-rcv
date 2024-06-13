@@ -1,8 +1,12 @@
+use colored::Colorize;
 use gnss_rs::sv::SV;
 use gnss_rtk::prelude::{
     AprioriPosition, Candidate, Carrier, Config, Duration, Epoch, InterpolationResult,
     IonosphereBias, Method, Observation, Solver, TroposphereBias, Vector3,
 };
+use map_3d::{ecef2geodetic, Ellipsoid};
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 
 use crate::ephemeris::Ephemeris;
 
@@ -10,9 +14,7 @@ const SPEED_OF_LIGHT: f64 = 299_792_458.0;
 const EARTH_MU_GPS: f64 = 3.9860058e14; // earth gravitational constant
 const EARTH_ROTATION_RATE: f64 = 7.2921151467e-5;
 
-pub struct PositionSolver {
-    cfg: Config,
-}
+const PI: f64 = std::f64::consts::PI;
 
 fn get_eccentric_anomaly(eph: &Ephemeris, t_k: f64) -> f64 {
     // computed mean motion
@@ -31,17 +33,16 @@ fn get_eccentric_anomaly(eph: &Ephemeris, t_k: f64) -> f64 {
         e = e + (mk - e + eph.ecc * e.sin()) / (1.0 - eph.ecc * e.cos());
         n_iter += 1;
     }
-    log::warn!("n_iter={n_iter} e={e}");
     assert!(n_iter < 20);
 
     e
 }
 
-pub fn compute_sv_position_ecef(eph: &Ephemeris, t: Epoch) -> (f64, f64, f64) {
+fn compute_sv_position_ecef(eph: &Ephemeris, t: Epoch) -> (f64, f64, f64) {
     let mut dte = (t - eph.toe_gpst).to_seconds();
 
-    log::warn!("{}: now={t}", eph.sv);
-    log::warn!("{}: toe={} delta-t={dte} ", eph.sv, eph.toe_gpst);
+    log::warn!("{}: ---- now={t:?}", eph.sv);
+    log::warn!("{}: ---- toe={:?} delta-t={dte} ", eph.sv, eph.toe_gpst);
 
     if dte > 302400.0 {
         dte -= 604800.0;
@@ -51,9 +52,8 @@ pub fn compute_sv_position_ecef(eph: &Ephemeris, t: Epoch) -> (f64, f64, f64) {
     }
 
     let ecc_anomaly = get_eccentric_anomaly(eph, dte);
-
     let v_k =
-        ((1.0 - (eph.ecc * eph.ecc)).sqrt() * ecc_anomaly.sin()).atan2(ecc_anomaly.cos() - eph.ecc);
+        ((1.0 - eph.ecc.powi(2)).sqrt() * ecc_anomaly.sin()).atan2(ecc_anomaly.cos() - eph.ecc);
 
     let phi_k = v_k + eph.omg;
     let duk = eph.cus * (2.0 * phi_k).sin() + eph.cuc * (2.0 * phi_k).cos();
@@ -75,11 +75,21 @@ pub fn compute_sv_position_ecef(eph: &Ephemeris, t: Epoch) -> (f64, f64, f64) {
     let ecef_z = orb_plane_y * ik.sin();
 
     log::warn!(
-        "{}: position: x={ecef_x:.1} y={ecef_y:.1} z={ecef_z:.1} h={:.0}km:",
+        "{}: position: x={:8.1} y={:8.1} z={:8.1} h={:.1}",
         eph.sv,
-        (ecef_x * ecef_x + ecef_y * ecef_y + ecef_z * ecef_z).sqrt() / 1000.0
+        ecef_x / 1000.0,
+        ecef_y / 1000.0,
+        ecef_z / 1000.0,
+        (ecef_x.powi(2) + ecef_y.powi(2) + ecef_z.powi(2)).sqrt() / 1000.0
     );
-
+    let (lat_rad, lon_rad, h) = ecef2geodetic(ecef_x, ecef_y, ecef_z, Ellipsoid::WGS84);
+    log::warn!(
+        "{}: position: lat/lon: {:.6},{:.6} h={:.1}",
+        eph.sv,
+        lat_rad * 180.0 / PI,
+        lon_rad * 180.0 / PI,
+        h / 1000.0
+    );
     (ecef_x, ecef_y, ecef_z)
 }
 
@@ -97,17 +107,38 @@ fn get_tropo_iono_bias() -> (TroposphereBias, IonosphereBias) {
     (tropo_bias, iono_bias)
 }
 
+pub type I = fn(Epoch, SV, usize) -> Option<InterpolationResult>;
+pub struct PositionSolver {
+    solver: Solver<I>,
+}
+
+static SOLVER_EPHEMERIS: Lazy<Mutex<Vec<Ephemeris>>> =
+    Lazy::new(|| Mutex::new(Vec::<Ephemeris>::new()));
+
+fn sv_interp(t: Epoch, sv: SV, _size: usize) -> Option<InterpolationResult> {
+    let ephs = SOLVER_EPHEMERIS.lock().unwrap();
+    let eph = ephs.iter().find(|&&e| e.sv == sv).unwrap();
+    let pos = compute_sv_position_ecef(eph, t);
+
+    Some(InterpolationResult::from_apc_position(pos))
+}
+
 impl PositionSolver {
     pub fn new() -> Self {
-        Self {
-            cfg: Config::static_preset(Method::SPP),
-        }
+        let apriori = AprioriPosition::from_geo(Vector3::new(46.5, 6.6, 0.0));
+        let mut cfg = Config::static_preset(Method::SPP);
+        cfg.min_sv_elev = Some(0.0);
+
+        let solver = Solver::new(&cfg, apriori, sv_interp as I).expect("Solver issue");
+
+        Self { solver }
     }
 
-    pub fn get_position(&mut self, ts_sec: f64, ephs: &Vec<Ephemeris>) -> bool {
-        // somewhere in the middle of Lake Leman
-        let initial = AprioriPosition::from_geo(Vector3::new(46.5, 6.6, 0.0));
-        let mut pool: Vec<Candidate> = vec![];
+    pub fn compute_position(&mut self, ts_sec: f64, ephs: &Vec<Ephemeris>) {
+        {
+            let mut glob_ephs = SOLVER_EPHEMERIS.lock().unwrap();
+            *glob_ephs = ephs.clone();
+        }
 
         /*
          * https://www.insidegnss.com/auto/IGM_janfeb12-Solutions.pdf
@@ -124,54 +155,69 @@ impl PositionSolver {
          *  sat1      [------]
          *  sat2      [-------------]
          */
-
-        let ts_ref = ephs.iter().map(|e| e.ts_sec).reduce(f64::min).unwrap();
-        let now_gpst = ephs[0].tow_gpst + Duration::from_seconds(ts_sec - ephs[0].ts_sec);
-
+        let mut pool: Vec<Candidate> = vec![];
+        let mut min_gpst = ephs[0].tow_gpst + Duration::from_seconds(ts_sec - ephs[0].ts_sec);
         for eph in ephs {
-            let pseudo_range_sec = eph.ts_sec - ts_ref;
+            let e_gpst = eph.tow_gpst + Duration::from_seconds(ts_sec - eph.ts_sec);
+            if e_gpst < min_gpst {
+                min_gpst = e_gpst;
+            }
+        }
+        let now_gpst = min_gpst + 0.01;
+        log::warn!("----- now_gpst={now_gpst:?}");
+        for eph in ephs {
+            let e_gpst = eph.tow_gpst + Duration::from_seconds(ts_sec - eph.ts_sec);
+            let pseudo_range_sec = (e_gpst - min_gpst).to_seconds() + eph.code_off_sec;
+            let pseudo_range = pseudo_range_sec * SPEED_OF_LIGHT;
+            let dt = (now_gpst - eph.tow_gpst).to_seconds();
+            let clock_corr = eph.f0 + eph.f1 * dt + eph.f2 * dt.powi(2);
+            assert!(dt >= 0.0);
 
+            log::warn!("{} - e_gpst={:?} eph.ts={}", eph.sv, e_gpst, eph.ts_sec);
             log::warn!(
-                "{} - tow={} eph.ts={} pseudo_range_sec={pseudo_range_sec}",
+                "{} - prng={pseudo_range_sec:+e}sec/{pseudo_range:.1}m tgd={:+e} clock_corr={clock_corr}",
                 eph.sv,
-                eph.tow,
-                eph.ts_sec,
+                eph.tgd,
             );
-            assert!(pseudo_range_sec >= 0.0);
 
             let candidate = Candidate::new(
                 eph.sv,
                 now_gpst,
-                Duration::from_seconds(0.0), // TBD
+                Duration::from_seconds(0.0),
                 Some(Duration::from_seconds(eph.tgd)),
                 vec![Observation {
                     carrier: Carrier::L1,
-                    value: SPEED_OF_LIGHT * pseudo_range_sec,
-                    snr: Some(35.0),
+                    value: pseudo_range,
+                    snr: Some(eph.cn0),
                 }],
-                vec![], // not required for SPP
-                vec![], // not used
+                vec![],
+                vec![],
             );
 
             pool.push(candidate);
         }
 
         let (tropo_bias, iono_bias) = get_tropo_iono_bias();
-        let sv_interp = |t: Epoch, sv: SV, _size: usize| {
-            let eph = ephs.iter().find(|&&e| e.sv == sv).unwrap();
-            let pos = compute_sv_position_ecef(eph, t);
+        let res = self
+            .solver
+            .resolve(now_gpst, &pool, &iono_bias, &tropo_bias);
 
-            Some(InterpolationResult::from_apc_position(pos))
-        };
-
-        let mut solver = Solver::new(&self.cfg, initial, sv_interp).expect("Solver issue");
-        let solutions = solver.resolve(now_gpst, &pool, &iono_bias, &tropo_bias);
-        let res = solutions.is_ok();
-        if res {
-            log::warn!("POSITION: {solutions:?}");
-        } else {
-            log::warn!("Failed to get a fix: {}", solutions.err().unwrap());
+        match res {
+            Err(err) => log::warn!("Failed to get a position: {err}"),
+            Ok(solution) => {
+                let pos = solution.1.position;
+                let (lat_rad, lon_rad, h) = ecef2geodetic(pos[0], pos[1], pos[2], Ellipsoid::WGS84);
+                log::warn!(
+                    "{}",
+                    format!(
+                        "XXX: lat/lon: {:.4},{:.4} h={:.1}",
+                        lat_rad * 180.0 / PI,
+                        lon_rad * 180.0 / PI,
+                        h / 1000.0
+                    )
+                    .red(),
+                );
+            }
         }
-        res
     }
 }

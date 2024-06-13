@@ -234,8 +234,9 @@ impl Channel {
         }
 
         log::warn!(
-            "{}: subframe-4: data_id={data_id} svid={svid} tow={}",
+            "{}: {}: data_id={data_id} svid={svid} tow={}",
             self.sv,
+            format!("subframe-4").blue(),
             self.nav.eph.tow
         );
     }
@@ -279,8 +280,9 @@ impl Channel {
         }
 
         log::warn!(
-            "{}: subframe-5: data_id={data_id} svid={svid} tow={}",
+            "{}: {}: data_id={data_id} svid={svid} tow={}",
             self.sv,
+            format!("subframe-5").blue(),
             self.nav.eph.tow
         );
     }
@@ -315,7 +317,7 @@ impl Channel {
             self.nav.eph.tow_gpst = Epoch::from_gpst_seconds(tow_secs_gpst.into());
             self.nav.eph.toe_gpst = Epoch::from_gpst_seconds(toe_secs_gpst.into());
             log::warn!(
-                "{}: ---- tow={} tgd={} toe={}",
+                "{}: tow={:?} tgd={:+e} toe={:?}",
                 self.sv,
                 self.nav.eph.tow_gpst,
                 self.nav.eph.tgd,

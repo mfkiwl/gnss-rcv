@@ -585,6 +585,8 @@ impl Channel {
         self.hist.trim();
         self.update_all_plots(false);
         self.log_periodically();
+        self.nav.eph.cn0 = self.trk.cn0;
+        self.nav.eph.code_off_sec = self.trk.code_off_sec;
 
         if self.trk.cn0 < CN0_THRESHOLD_LOST {
             self.idle_start();
@@ -594,7 +596,7 @@ impl Channel {
     pub fn process_samples(&mut self, iq_vec: &Vec<Complex64>, ts_sec: f64) {
         self.ts_sec = ts_sec;
 
-        if self.state != State::IDLE {
+        if false && self.state != State::IDLE {
             log::info!(
                 "{}: processing: ts={:.3}: cn0={:.1} dopp={:5.0} code_off_sec={:2.6}",
                 self.sv,
