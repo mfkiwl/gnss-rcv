@@ -35,8 +35,8 @@ impl Default for SyncState {
 
 #[derive(Default)]
 pub struct Navigation {
-    ssync: usize, // beginning of nav frame in num_trk_samples
-    fsync: usize, // set to num_trk_samples after nav parity OK
+    bit_sync: usize, // beginning of a navigation bit in num_trk_samples
+    nav_sync: usize, // beginning/end of a navigation frame in num_trk_samples
     sync_state: SyncState,
     bits: Vec<u8>, // navigation bits
     count_parity_err: usize,
@@ -54,8 +54,8 @@ impl Navigation {
     }
 
     pub fn init(&mut self) {
-        self.ssync = 0;
-        self.fsync = 0;
+        self.bit_sync = 0;
+        self.nav_sync = 0;
         self.sync_state = SyncState::NORMAL;
         self.bits.fill(0);
     }
@@ -102,7 +102,7 @@ impl Channel {
     }
 
     fn nav_sync_symbol(&mut self, num: usize) -> bool {
-        if self.nav.ssync == 0 {
+        if self.nav.bit_sync == 0 {
             let n = if num <= 2 { 1 } else { num - 1 };
             let len = self.hist.corr_p.len();
 
@@ -121,17 +121,17 @@ impl Channel {
             r /= 2.0 * n as f64;
 
             if p.abs() >= r && r >= THRESHOLD_SYNC {
-                self.nav.ssync = self.num_trk_samples - n;
-                log::info!("{}: SYNC: p={:.5} ssync={}", self.sv, p, self.nav.ssync);
+                self.nav.bit_sync = self.num_trk_samples - n;
+                log::info!("{}: SYNC: p={:.5} ssync={}", self.sv, p, self.nav.bit_sync);
             }
-        } else if (self.num_trk_samples - self.nav.ssync) % num == 0 {
+        } else if (self.num_trk_samples - self.nav.bit_sync) % num == 0 {
             let p = self.nav_mean_ip(num);
             if p.abs() >= THRESHOLD_LOST {
                 let sym: u8 = if p >= 0.0 { 1 } else { 0 };
                 self.nav_add_bit(sym);
                 return true;
             } else {
-                self.nav.ssync = 0;
+                self.nav.bit_sync = 0;
                 self.nav.sync_state = SyncState::NORMAL;
                 log::info!("{}: SYNC {} p={}", self.sv, format!("LOST").red(), p)
             }
@@ -303,20 +303,20 @@ impl Channel {
 
     fn nav_decode_lnav(&mut self, sync: SyncState) {
         let rev = if sync == SyncState::NORMAL { 0 } else { 1 };
-        let syms_len = self.nav.bits.len();
-        let syms = &self.nav.bits[syms_len - 308..syms_len - 8];
-        let bits: Vec<_> = syms.iter().map(|v| v ^ rev).collect();
+        let bits_len = self.nav.bits.len();
+        let bits_raw = &self.nav.bits[bits_len - 308..bits_len - 8];
+        let bits: Vec<_> = bits_raw.iter().map(|v| v ^ rev).collect();
         let mut nav_data = vec![0; 300];
 
         if Self::nav_test_lnav_parity(&bits, &mut nav_data) {
-            self.nav.fsync = self.num_trk_samples;
+            self.nav.nav_sync = self.num_trk_samples;
             self.nav.sync_state = sync;
 
             let id = self.nav_decode_lnav_subframe(&nav_data);
             let hex_str = hex_str(&nav_data[0..300]);
             log::info!("{}: LNAV: id={id} -- {hex_str}", self.sv);
         } else {
-            self.nav.fsync = 0;
+            self.nav.nav_sync = 0;
             self.nav.sync_state = SyncState::NORMAL;
             self.nav.count_parity_err += 1;
 
@@ -368,15 +368,15 @@ impl Channel {
             return;
         }
 
-        if self.nav.fsync > 0 {
-            if self.num_trk_samples == self.nav.fsync + 300 * 20 {
+        if self.nav.nav_sync > 0 {
+            if self.num_trk_samples == self.nav.nav_sync + 300 * 20 {
                 let sync = self.nav_get_frame_sync_state(preambule);
                 if sync == self.nav.sync_state {
                     self.nav_decode_lnav(sync);
                 }
-            } else if self.num_trk_samples > self.nav.fsync + 300 * 20 {
-                self.nav.fsync = 0;
-                self.nav.ssync = 0;
+            } else if self.num_trk_samples > self.nav.nav_sync + 300 * 20 {
+                self.nav.nav_sync = 0;
+                self.nav.bit_sync = 0;
                 self.nav.sync_state = SyncState::NORMAL;
             }
         } else if self.num_trk_samples >= 20 * 308 + 1000 {
