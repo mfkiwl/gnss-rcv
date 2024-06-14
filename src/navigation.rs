@@ -14,7 +14,6 @@ use once_cell::sync::Lazy;
 
 const SECS_PER_WEEK: u32 = 7 * 24 * 60 * 60;
 const SDR_MAX_NSYM: usize = 18000;
-const SDR_MAX_DATA: usize = 4096;
 
 const THRESHOLD_SYNC: f64 = 0.4; // 0.02
 const THRESHOLD_LOST: f64 = 0.03; // 0.002
@@ -36,14 +35,11 @@ impl Default for SyncState {
 
 #[derive(Default)]
 pub struct Navigation {
-    ssync: usize,
-    fsync: usize,
+    ssync: usize, // beginning of nav frame in num_trk_samples
+    fsync: usize, // set to num_trk_samples after nav parity OK
     sync_state: SyncState,
-    num_err: usize,
-    syms: Vec<u8>, // navigation bits
-    data: Vec<u8>, // navigation data from bits
-    count_ok: usize,
-    count_err: usize,
+    bits: Vec<u8>, // navigation bits
+    count_parity_err: usize,
     pub eph: Ephemeris,
 }
 
@@ -51,8 +47,7 @@ impl Navigation {
     pub fn new(sv: SV) -> Self {
         Self {
             sync_state: SyncState::NORMAL,
-            syms: vec![0; SDR_MAX_NSYM],
-            data: vec![0u8; SDR_MAX_DATA],
+            bits: vec![0; SDR_MAX_NSYM],
             eph: Ephemeris::new(sv),
             ..Default::default()
         }
@@ -62,11 +57,7 @@ impl Navigation {
         self.ssync = 0;
         self.fsync = 0;
         self.sync_state = SyncState::NORMAL;
-        self.num_err = 0;
-
-        for i in 0..SDR_MAX_NSYM {
-            self.syms[i] = 0;
-        }
+        self.bits.fill(0);
     }
 }
 
@@ -82,18 +73,16 @@ impl Channel {
             p += c.re / c.norm();
         }
         p / n as f64
-        //p
     }
-    fn nav_add_symbol(&mut self, sym: u8) {
-        self.nav.syms.rotate_left(1);
-        *self.nav.syms.last_mut().unwrap() = sym;
+    fn nav_add_bit(&mut self, bit: u8) {
+        self.nav.bits.rotate_left(1);
+        *self.nav.bits.last_mut().unwrap() = bit;
     }
 
     fn nav_get_frame_sync_state(&self, preambule: &[u8]) -> SyncState {
-        let bits = &self.nav.syms[SDR_MAX_NSYM - 308..];
-        let preambule_len = preambule.len();
-        let bits_beg = &bits[0..preambule_len];
-        let bits_end = &bits[300..300 + preambule_len];
+        let bits = &self.nav.bits[SDR_MAX_NSYM - 308..];
+        let bits_beg = &bits[0..preambule.len()];
+        let bits_end = &bits[300..300 + preambule.len()];
         let mut sync_state = SyncState::NONE;
 
         if bits_equal(preambule, bits_beg) && bits_equal(preambule, bits_end) {
@@ -130,7 +119,6 @@ impl Channel {
 
             p /= 2.0 * n as f64;
             r /= 2.0 * n as f64;
-            //log::warn!("{} p={p} r={r} threshold={}", self.sv, THRESHOLD_SYNC);
 
             if p.abs() >= r && r >= THRESHOLD_SYNC {
                 self.nav.ssync = self.num_trk_samples - n;
@@ -140,7 +128,7 @@ impl Channel {
             let p = self.nav_mean_ip(num);
             if p.abs() >= THRESHOLD_LOST {
                 let sym: u8 = if p >= 0.0 { 1 } else { 0 };
-                self.nav_add_symbol(sym);
+                self.nav_add_bit(sym);
                 return true;
             } else {
                 self.nav.ssync = 0;
@@ -151,26 +139,19 @@ impl Channel {
         false
     }
 
-    fn nav_decode_lnav_subframe1(&mut self) {
-        let buf = &self.nav.data[0..];
-
+    fn nav_decode_lnav_subframe1(&mut self, buf: &[u8]) {
         self.nav.eph.nav_decode_lnav_subframe1(buf, self.sv);
     }
 
-    fn nav_decode_lnav_subframe2(&mut self) {
-        let buf = &self.nav.data[0..];
-
+    fn nav_decode_lnav_subframe2(&mut self, buf: &[u8]) {
         self.nav.eph.nav_decode_lnav_subframe2(buf, self.sv);
     }
 
-    fn nav_decode_lnav_subframe3(&mut self) {
-        let buf = &self.nav.data[0..];
-
+    fn nav_decode_lnav_subframe3(&mut self, buf: &[u8]) {
         self.nav.eph.nav_decode_lnav_subframe3(buf, self.sv);
     }
 
-    fn nav_decode_lnav_subframe4(&mut self) {
-        let buf = &self.nav.data[0..];
+    fn nav_decode_lnav_subframe4(&mut self, buf: &[u8]) {
         self.nav.eph.tow = getbitu(buf, 30, 17) * 6;
         let data_id = getbitu(buf, 60, 2);
         let svid = getbitu(buf, 62, 6);
@@ -235,8 +216,7 @@ impl Channel {
         );
     }
 
-    fn nav_decode_lnav_subframe5(&mut self) {
-        let buf = &self.nav.data[0..];
+    fn nav_decode_lnav_subframe5(&mut self, buf: &[u8]) {
         self.nav.eph.tow = getbitu(buf, 30, 17) * 6;
         let data_id = getbitu(buf, 60, 2);
         let svid = getbitu(buf, 62, 4);
@@ -281,8 +261,7 @@ impl Channel {
         );
     }
 
-    fn nav_decode_lnav_subframe(&mut self) -> u32 {
-        let buf = &self.nav.data[0..];
+    fn nav_decode_lnav_subframe(&mut self, buf: &[u8]) -> u32 {
         let preamble = getbitu(buf, 0, 8);
         assert_eq!(preamble, 0x8b);
         self.nav.eph.tlm = getbitu(buf, 8, 14);
@@ -295,11 +274,11 @@ impl Channel {
         assert_eq!(zero, 0);
 
         match subframe_id {
-            1 => self.nav_decode_lnav_subframe1(),
-            2 => self.nav_decode_lnav_subframe2(),
-            3 => self.nav_decode_lnav_subframe3(),
-            4 => self.nav_decode_lnav_subframe4(),
-            5 => self.nav_decode_lnav_subframe5(),
+            1 => self.nav_decode_lnav_subframe1(buf),
+            2 => self.nav_decode_lnav_subframe2(buf),
+            3 => self.nav_decode_lnav_subframe3(buf),
+            4 => self.nav_decode_lnav_subframe4(buf),
+            5 => self.nav_decode_lnav_subframe5(buf),
             _ => log::warn!("{}: invalid subframe id={subframe_id}", self.sv),
         }
         if self.nav.eph.week != 0 {
@@ -323,43 +302,38 @@ impl Channel {
     }
 
     fn nav_decode_lnav(&mut self, sync: SyncState) {
-        let mut buf = [0u8; 300];
         let rev = if sync == SyncState::NORMAL { 0 } else { 1 };
-        let syms_len = self.nav.syms.len();
-        let syms = &self.nav.syms[syms_len - 308..syms_len - 8];
+        let syms_len = self.nav.bits.len();
+        let syms = &self.nav.bits[syms_len - 308..syms_len - 8];
+        let bits: Vec<_> = syms.iter().map(|v| v ^ rev).collect();
+        let mut nav_data = vec![0; 300];
 
-        for i in 0..syms.len() {
-            buf[i] = syms[i] ^ rev;
-        }
-
-        if Self::nav_test_lnav_parity(&buf[0..], &mut self.nav.data) {
-            log::info!("{}: PARITY OK", self.sv);
+        if Self::nav_test_lnav_parity(&bits, &mut nav_data) {
             self.nav.fsync = self.num_trk_samples;
             self.nav.sync_state = sync;
-            self.nav.count_ok += 1;
 
-            let id = self.nav_decode_lnav_subframe();
-            let hex_str = hex_str(&self.nav.data[0..300]);
-            log::info!("{}: LNAV: id={id} -- {}", self.sv, hex_str);
+            let id = self.nav_decode_lnav_subframe(&nav_data);
+            let hex_str = hex_str(&nav_data[0..300]);
+            log::info!("{}: LNAV: id={id} -- {hex_str}", self.sv);
         } else {
             self.nav.fsync = 0;
             self.nav.sync_state = SyncState::NORMAL;
-            self.nav.count_err += 1;
+            self.nav.count_parity_err += 1;
 
             log::warn!("{}: PARITY ERROR", self.sv);
         }
     }
 
-    fn nav_test_lnav_parity(syms: &[u8], out: &mut [u8]) -> bool {
+    fn nav_test_lnav_parity(bits: &Vec<u8>, nav_data: &mut [u8]) -> bool {
         const MASK: [u32; 6] = [
             0x2EC7CD2, 0x1763E69, 0x2BB1F34, 0x15D8F9A, 0x1AEC7CD, 0x22DEA27,
         ];
-        assert_eq!(syms.len(), 300);
+        assert_eq!(bits.len(), 300);
 
         let mut data: u32 = 0;
         for i in 0..10 {
             for j in 0..30 {
-                data = (data << 1) | syms[i * 30 + j] as u32;
+                data = (data << 1) | bits[i * 30 + j] as u32;
             }
             if data & (1 << 30) != 0 {
                 data ^= 0x3FFFFFC0;
@@ -371,8 +345,8 @@ impl Channel {
                     return false;
                 }
             }
-            setbitu(out, 30 * i, 24, (data >> 6) & 0xFFFFFF);
-            setbitu(out, 30 * i + 24, 6, 0);
+            setbitu(nav_data, 30 * i, 24, (data >> 6) & 0xFFFFFF);
+            setbitu(nav_data, 30 * i + 24, 6, 0);
         }
         true
     }
