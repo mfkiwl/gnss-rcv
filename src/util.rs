@@ -143,12 +143,11 @@ pub fn xor_bits(v: u32) -> u8 {
     ];
 
     let bytes = v.to_le_bytes().map(|v| v as usize);
-
     XOR_8B[bytes[0]] ^ XOR_8B[bytes[1]] ^ XOR_8B[bytes[2]] ^ XOR_8B[bytes[3]]
 }
 
 pub fn bits_opposed(bits0: &[u8], bits1: &[u8]) -> bool {
-    let bits1_rev: Vec<u8> = bits1.iter().map(|v| 1 - v).collect();
+    let bits1_rev: Vec<_> = bits1.iter().map(|v| 1 - v).collect();
     bits_equal(bits0, bits1_rev.as_slice())
 }
 

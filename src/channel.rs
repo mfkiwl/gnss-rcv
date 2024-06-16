@@ -43,9 +43,9 @@ enum State {
 #[derive(Default)]
 pub struct Tracking {
     prn_code: Vec<Complex64>, // upsampled
-    pub doppler_hz: f64,
-    pub code_off_sec: f64,
-    pub cn0: f64,
+    doppler_hz: f64,
+    code_off_sec: f64,
+    cn0: f64,
     adr: f64,
     phi: f64,
     err_phase: f64,
@@ -57,11 +57,11 @@ pub struct Tracking {
 
 #[derive(Default)]
 pub struct History {
-    pub last_log_ts: f64,
-    pub last_plot_ts: f64,
-    pub code_phase_offset: Vec<f64>,
-    pub phi_error: Vec<f64>,
-    pub doppler_hz: Vec<f64>,
+    last_log_ts: f64,
+    last_plot_ts: f64,
+    code_phase_offset: Vec<f64>,
+    phi_error: Vec<f64>,
+    doppler_hz: Vec<f64>,
     pub corr_p: Vec<Complex64>,
 }
 
