@@ -56,7 +56,7 @@ impl IQRecording {
         println!(
             "file: {} -- {file_type} {} duration: {:.1} secs",
             file_path.display().to_string().green(),
-            ByteSize::b(file_size).to_string_as(false).bold(),
+            ByteSize::b(file_size).to_string().bold(),
             recording_duration_sec
         );
         Self {
