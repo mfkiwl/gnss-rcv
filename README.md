@@ -1,8 +1,10 @@
 # gnss-rcv: GPS L1 C/A acquisition
 This app takes as input:
  - an SDR IQ recording
- - or an rtl-sdr device (WIP)
-.. and performs signal acquisition, tracking and ephemeris decoding. Finally it attempts to get a position fix. This is still a work in progress.
+ - or an rtl-sdr device
+.. and performs signal acquisition, tracking and ephemeris decoding. Finally it attempts to get a position fix.
+
+Both options are still WIP.
 
 ## Output diagnostic
 As the gnss receiver processes the IQ data it periodically generates a diagnostic image in an output folder that helps explain the inner state of the decoder.
@@ -23,9 +25,9 @@ Note that the app supports multiple IQ file formats: i8, 2xf16, 2xf32, etc.
 
 ## Download an existing IQ recording with GPS L1 signal
 
-The one I used for most of the development, download and unzip:
+The one I used for most of the development:
 https://github.com/codyd51/gypsum/releases/download/1.0/nov_3_time_18_48_st_ives.zip
-.. then move the file under resources/. Use "-t 2xf32".
+.. unzip and move the file under resources/. Use "-t 2xf32".
 
 A few online SDR recordings at 1575,42 MHz are available online:
 - https://jeremyclark.ca/wp/telecom/rtl-sdr-for-satellite-gps/
