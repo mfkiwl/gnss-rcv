@@ -1,12 +1,13 @@
 # gnss-rcv: GPS L1 C/A acquisition
 
 This tool takes as input:
- - an rtl-sdr device
- - or an SDR IQ recording
-and performs signal acquisition and tracking, ephemeris decoding and attempts to get a position fix.
+ - an SDR IQ recording
+ - or an rtl-sdr device (WIP)
+and performs signal acquisition and tracking, ephemeris decoding. Finally it attempts to get a position fix. This is still a work in progress.
 
 ## Requirements.
 A raspberry pi will do, I use an RTL-SDR dongle with a cheap GPS antenna w/ an SMA connector.
+IQ recording can be downloaded or generated, cf below.
 
 ## Run gnss-rcv
 
@@ -19,6 +20,20 @@ A raspberry pi will do, I use an RTL-SDR dongle with a cheap GPS antenna w/ an S
 # RUST_LOG=warn cargo run --release -- -d
 ```
 
+## Download an existing IQ recording with GPS L1 signal
+
+A few online SDR recordings at 1575,42 MHz are available online:
+- https://jeremyclark.ca/wp/telecom/rtl-sdr-for-satellite-gps/
+- https://s-taka.org/en/gnss-sdr-with-rtl-tcp/
+- https://destevez.net/2022/03/timing-sdr-recordings-with-gps/
+
+## Simulate a GPS SDR recording
+Cf [GPS-SDR-SIM](https://github.com/osqzss/gps-sdr-sim)
+```
+ ./gps-sdr-sim -b 16 -d 60 -t 2022/01/01,01:02:03 -l 35.681298,139.766247,10.0 -e brdc0010.22n -s 2046000
+```
+This generates an IQ recording w/ 2 int16 per I and Q sample.
+
 ## Record from rtl-sdr to file
 - you need to activate bias-t and power the gps/lna antenna:
 ```
@@ -29,14 +44,7 @@ $ rtl_biast -d 0 -b 1
 $ rtl_sdr -f 1575420000 -s 2046000 -n 20460000 output.bin
 ```
 
-## Simulate a GPS SDR recording
-Cf [GPS-SDR-SIM](https://github.com/osqzss/gps-sdr-sim)
-```
- ./gps-sdr-sim -b 16 -d 60 -t 2022/01/01,01:02:03 -l 35.681298,139.766247,10.0 -e brdc0010.22n -s 2046000
-```
-This generates an IQ recording w/ 2 int16 per I and Q sample.
-
-Resources:
+## Resources:
 - [RTL-SDR](https://www.rtl-sdr.com/buy-rtl-sdr-dvb-t-dongles/)
 - [Software Defined GPS](https://www.ocf.berkeley.edu/~marsy/resources/gnss/A%20Software-Defined%20GPS%20and%20Galileo%20Receiver.pdf)
 - [GPS-SDR-SIM](https://github.com/osqzss/gps-sdr-sim)
@@ -45,12 +53,13 @@ Resources:
 - [Raw GPS Signal](http://www.jks.com/gps/gps.html)
 - [PocketSDR](https://github.com/tomojitakasu/PocketSDR/)
 
-A few online SDR recordings at 1575,42 MHz are available online:
-- https://jeremyclark.ca/wp/telecom/rtl-sdr-for-satellite-gps/
-- https://s-taka.org/en/gnss-sdr-with-rtl-tcp/
-- https://destevez.net/2022/03/timing-sdr-recordings-with-gps/
+## Output diagnostic
+As the gnss receiver processes the IQ data it generates a diagnostic image that can help explain the inner workings of the app.
+
+![diagnostic output](https://www.dropbox.com/scl/fi/p69vky5crnpmb2ljtu3lf/Screenshot-2025-03-26-at-23.28.00.png)
 
 ## TODO
+- finish position fix computation
 - handle different sampling frequencies
 - add a minimal UI: ratatui/egui
 - support: SBAS
