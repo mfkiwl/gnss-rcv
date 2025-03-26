@@ -56,7 +56,7 @@ $ rtl_sdr -f 1575420000 -s 2046000 -n 20460000 output.bin
 ## Output diagnostic
 As the gnss receiver processes the IQ data it generates a diagnostic image that can help explain the inner workings of the app.
 
-![diagnostic output](https://www.dropbox.com/scl/fi/p69vky5crnpmb2ljtu3lf/Screenshot-2025-03-26-at-23.28.00.png)
+![diagnostic output](https://www.dropbox.com/scl/fi/p69vky5crnpmb2ljtu3lf/Screenshot-2025-03-26-at-23.28.00.png?rlkey=1ftexiliojndphc77beatq6es&dl=0)
 
 ## TODO
 - finish position fix computation
