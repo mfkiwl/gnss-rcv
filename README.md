@@ -1,10 +1,10 @@
-# gnss-rcv: GPS L1 C/A acquisition
+# gnss-rcv: GPS L1 C/A acquisition in Rust
 This app takes as input:
  - an SDR IQ recording
  - or an rtl-sdr device
 .. and performs signal acquisition, tracking and ephemeris decoding. Finally it attempts to get a position fix.
 
-Both options are still WIP.
+This is still WIP.
 
 ## Output diagnostic
 As the gnss receiver processes the IQ data it periodically generates a diagnostic image in an output folder that helps explain the inner state of the decoder.
