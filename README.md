@@ -4,7 +4,8 @@
 This app takes as input:
 - an SDR IQ recording
 - or an rtl-sdr device
-.. and performs signal acquisition, tracking and ephemeris decoding. Finally it attempts to get a position fix.
+
+It performs signal acquisition, tracking and ephemeris decoding. Finally it attempts to get a position fix.
 
 This is still WIP.
 

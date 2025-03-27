@@ -4,7 +4,7 @@ use gnss_rtk::prelude::{
     AprioriPosition, Candidate, Carrier, Config, Duration, Epoch, InterpolationResult,
     IonosphereBias, Method, Observation, Solver, TroposphereBias, Vector3,
 };
-use map_3d::{ecef2geodetic, Ellipsoid};
+use map_3d::{Ellipsoid, ecef2geodetic};
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 

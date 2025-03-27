@@ -71,23 +71,25 @@ impl RtlSdrDevice {
         let iq_deq = m.iq_deque.clone();
         let num_samples_total = m.num_samples_total.clone();
         let num_samples = m.num_samples.clone();
-        thread::spawn(move || loop {
-            log::warn!("starting async_read");
-            reader
-                .read_async(0, 0, |array| {
-                    let mut v = vec![Complex64::default(); array.len()];
-                    for i in 0..array.len() / 2 {
-                        let re = (array[2 * i + 0] as f64 - 127.3) / 128.0;
-                        let im = (array[2 * i + 1] as f64 - 127.3) / 128.0;
-                        v[i] = Complex64 { re, im };
-                    }
+        thread::spawn(move || {
+            loop {
+                log::warn!("starting async_read");
+                reader
+                    .read_async(0, 0, |array| {
+                        let mut v = vec![Complex64::default(); array.len()];
+                        for i in 0..array.len() / 2 {
+                            let re = (array[2 * i + 0] as f64 - 127.3) / 128.0;
+                            let im = (array[2 * i + 1] as f64 - 127.3) / 128.0;
+                            v[i] = Complex64 { re, im };
+                        }
 
-                    let n = v.len();
-                    iq_deq.lock().unwrap().push_back(v);
-                    *num_samples.lock().unwrap() += n;
-                    *num_samples_total.lock().unwrap() += n;
-                })
-                .unwrap();
+                        let n = v.len();
+                        iq_deq.lock().unwrap().push_back(v);
+                        *num_samples.lock().unwrap() += n;
+                        *num_samples_total.lock().unwrap() += n;
+                    })
+                    .unwrap();
+            }
         });
 
         Ok(m)

@@ -1,4 +1,4 @@
-use rustfft::{num_complex::Complex64, FftPlanner};
+use rustfft::{FftPlanner, num_complex::Complex64};
 use std::ops::Mul;
 
 const PI: f64 = std::f64::consts::PI;

@@ -3,7 +3,7 @@ use gnss_rs::sv::SV;
 use gnss_rtk::prelude::Epoch;
 
 use crate::{
-    constants::{P2_19, P2_29, P2_31, P2_33, P2_43, P2_5, P2_55, SC2RAD},
+    constants::{P2_5, P2_19, P2_29, P2_31, P2_33, P2_43, P2_55, SC2RAD},
     util::{getbits, getbits2, getbitu, getbitu2},
 };
 

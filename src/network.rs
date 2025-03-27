@@ -4,9 +4,9 @@ use std::collections::VecDeque;
 use std::io::Read;
 use std::io::Write;
 use std::net::TcpStream;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Instant;
@@ -78,27 +78,29 @@ impl RtlSdrTcp {
         // set tuner gain
         //rtl_sdr_send_cmd(&mut socket, 0x4, 480)?;
 
-        let th = thread::spawn(move || loop {
-            let mut data = [0u8; 2036 * 2];
-            let mut v = vec![Complex64::default(); data.len()];
-            let res = socket.read_exact(&mut data);
-            if res.is_err() {
-                log::warn!("Failed to read from rtl-sdr");
-                exit_req.store(true, Ordering::SeqCst);
-                break;
+        let th = thread::spawn(move || {
+            loop {
+                let mut data = [0u8; 2036 * 2];
+                let mut v = vec![Complex64::default(); data.len()];
+                let res = socket.read_exact(&mut data);
+                if res.is_err() {
+                    log::warn!("Failed to read from rtl-sdr");
+                    exit_req.store(true, Ordering::SeqCst);
+                    break;
+                }
+
+                for i in 0..data.len() / 2 {
+                    let re = (data[2 * i + 0] as f64 - 127.3) / 128.0;
+                    let im = (data[2 * i + 1] as f64 - 127.3) / 128.0;
+
+                    v[i] = Complex64 { re, im };
+                }
+
+                let n = v.len();
+                iq_deq.lock().unwrap().push_back(v);
+                *num_samples.lock().unwrap() += n;
+                *num_samples_total.lock().unwrap() += n;
             }
-
-            for i in 0..data.len() / 2 {
-                let re = (data[2 * i + 0] as f64 - 127.3) / 128.0;
-                let im = (data[2 * i + 1] as f64 - 127.3) / 128.0;
-
-                v[i] = Complex64 { re, im };
-            }
-
-            let n = v.len();
-            iq_deq.lock().unwrap().push_back(v);
-            *num_samples.lock().unwrap() += n;
-            *num_samples_total.lock().unwrap() += n;
         });
         m.read_th = Some(th);
 

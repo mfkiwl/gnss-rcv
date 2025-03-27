@@ -1,8 +1,8 @@
 use colored::Colorize;
 use gnss_rs::sv::SV;
 use plotters::prelude::*;
-use rustfft::num_complex::Complex64;
 use rustfft::FftPlanner;
+use rustfft::num_complex::Complex64;
 
 const PI: f64 = std::f64::consts::PI;
 
