@@ -7,7 +7,7 @@ This app takes as input:
 
 It performs signal acquisition, tracking and ephemeris decoding. Finally it attempts to get a position fix.
 
-This is still WIP.
+Note that this is still a WIP.
 
 ## Output diagnostic
 As the gnss receiver processes the IQ data it periodically generates a diagnostic image that helps explain the inner state of the decoder.
@@ -15,6 +15,16 @@ As the gnss receiver processes the IQ data it periodically generates a diagnosti
 ![diagnostic output](./assets/iq-output.png)
 
 ## Run gnss-rcv
+### Dependencies
+You need to install librtlsdr:
+```
+$ sudo apt install librtlsdr-dev
+```
+or
+```
+$ brew install librtlsdr
+```
+
 ### With IQ recording of L1 signal at 2046MHz
 ```
 $ RUST_LOG=warn cargo run --release -- -f path/to/recording.bin
@@ -25,6 +35,7 @@ Note that the app supports multiple IQ file formats: i8, 2xf16, 2xf32, etc.
 ```
 $ RUST_LOG=warn cargo run --release -- -d
 ```
+Note that I haven't been able to identify satellites by using rtlsdr directly with my h/w setup. Not sure it's due to a bug or my setup.
 
 ## Download an existing IQ recording with GPS L1 signal
 
