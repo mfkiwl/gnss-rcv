@@ -1,6 +1,6 @@
 [package]
 name = "gnss-rcv"
-version = "0.2.0"
+version = "0.1.0"
 authors = ["Maxime Austruy <austruym@gmail.com>"]
 edition = "2024"
 

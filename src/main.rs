@@ -31,7 +31,7 @@ struct Options {
     #[structopt(
         short = "f",
         long,
-        default_value = "resources/nov_3_time_18_48_st_ives_2xf32"
+        default_value = "resources/nov_3_time_18_48_st_ives"
     )]
     file: PathBuf,
     #[structopt(short = "s", long, help = "host for rtl-sdr-tcp", default_value = "")]
