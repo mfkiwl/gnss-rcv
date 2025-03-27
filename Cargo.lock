@@ -2126,7 +2126,7 @@ dependencies = [
 [[package]]
 name = "rtlsdr_mt"
 version = "2.2.1"
-source = "git+https://github.com/mx4/rtlsdr_mt.rs.git?rev=c33d6b51dbc7ce816a1a9de7ff0fdabf6152e6b2#c33d6b51dbc7ce816a1a9de7ff0fdabf6152e6b2"
+source = "git+https://github.com/mx4/rtlsdr_mt.rs.git?rev=8ae8911b06be9680b92ef40367e72134b186aae9#8ae8911b06be9680b92ef40367e72134b186aae9"
 dependencies = [
  "libc",
  "rtlsdr_sys",
@@ -2134,8 +2134,8 @@ dependencies = [
 
 [[package]]
 name = "rtlsdr_sys"
-version = "1.1.4"
-source = "git+https://github.com/mx4/rtlsdr_sys.rs.git?rev=012f5ffe6331b2ed8e700822d07a9049cdf2a6e6#012f5ffe6331b2ed8e700822d07a9049cdf2a6e6"
+version = "1.1.3"
+source = "git+https://github.com/mx4/rtlsdr_sys.rs.git?rev=64a4539f7a178f8e591345b65fba2da42895dd33#64a4539f7a178f8e591345b65fba2da42895dd33"
 dependencies = [
  "libc",
  "pkg-config",
