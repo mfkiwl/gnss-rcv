@@ -1,26 +1,28 @@
+[![Rust](https://github.com/mx4/gnss-rcv/actions/workflows/rust.yml/badge.svg)](https://github.com/mx4/gnss-rcv/actions/workflows/rust.yml)
+
 # gnss-rcv: GPS L1 C/A acquisition in Rust
 This app takes as input:
- - an SDR IQ recording
- - or an rtl-sdr device
+- an SDR IQ recording
+- or an rtl-sdr device
 .. and performs signal acquisition, tracking and ephemeris decoding. Finally it attempts to get a position fix.
 
 This is still WIP.
 
 ## Output diagnostic
-As the gnss receiver processes the IQ data it periodically generates a diagnostic image in an output folder that helps explain the inner state of the decoder.
+As the gnss receiver processes the IQ data it periodically generates a diagnostic image that helps explain the inner state of the decoder.
 
 ![diagnostic output](./assets/iq-output.png)
 
 ## Run gnss-rcv
 ### With IQ recording of L1 signal at 2046MHz
 ```
-# RUST_LOG=warn cargo run --release -- -f path/to/recording.bin
+$ RUST_LOG=warn cargo run --release -- -f path/to/recording.bin
 ```
 Note that the app supports multiple IQ file formats: i8, 2xf16, 2xf32, etc.
 
 ### Use rtl-sdr:
 ```
-# RUST_LOG=warn cargo run --release -- -d
+$ RUST_LOG=warn cargo run --release -- -d
 ```
 
 ## Download an existing IQ recording with GPS L1 signal
