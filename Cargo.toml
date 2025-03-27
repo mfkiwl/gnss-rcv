@@ -29,4 +29,4 @@ once_cell = "1.21.1"
 map_3d = "0.1.5"
 
 [target.'cfg(unix)'.dependencies]
-rtlsdr_mt = { git = 'https://github.com/mx4/rtlsdr_mt.rs.git', branch = 'add-bias-tee' }
+rtlsdr_mt = { git = 'https://github.com/mx4/rtlsdr_mt.rs.git', rev = 'c33d6b51dbc7ce816a1a9de7ff0fdabf6152e6b2' }
