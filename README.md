@@ -1,4 +1,4 @@
-[![Rust](https://github.com/mx4/gnss-rcv/actions/workflows/rust.yml/badge.svg)](https://github.com/mx4/gnss-rcv/actions/workflows/rust.yml)
+[![CI](https://github.com/mx4/gnss-rcv/actions/workflows/ci.yml/badge.svg)](https://github.com/mx4/gnss-rcv/actions/workflows/ci.yml)
 
 # gnss-rcv: GPS L1 C/A acquisition in Rust
 This app takes as input:
