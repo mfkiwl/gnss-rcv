@@ -24,7 +24,7 @@ use gnss_rcv::recording::IQRecording;
 type ReadIQFn = dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>;
 
 #[derive(StructOpt)]
-#[structopt(name = "gnss-rcv", about = "Gnss tracker")]
+#[structopt(name = "gnss-rcv", about = "GNSS receiver")]
 struct Options {
     #[structopt(long, help = "print gold codes")]
     print_gold_code: bool,
@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     plot_remove_old_graph();
 
     log::warn!(
-        "gnss-rs: sampling: {} fi: {} off_msec={} num_msec={}",
+        "gnss-rcv: sampling: {} fi: {} off_msec={} num_msec={}",
         format!("{:.1} KHz", opt.fs / 1000.0).bold(),
         format!("{:.1} KHz", opt.fi / 1000.0).bold(),
         opt.off_msec,
