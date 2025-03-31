@@ -35,9 +35,9 @@ const CN0_THRESHOLD_LOST: f64 = 29.0;
 
 #[derive(PartialEq, Debug)]
 enum State {
-    TRACKING,
-    ACQUISITION,
-    IDLE,
+    Tracking,
+    Acquisition,
+    Idle,
 }
 
 #[derive(Default)]
@@ -124,7 +124,7 @@ impl Drop for Channel {
 
 impl Channel {
     pub fn get_cn0(&self) -> f64 {
-        if self.state != State::TRACKING {
+        if self.state != State::Tracking {
             return 0.0;
         }
 
@@ -172,7 +172,7 @@ impl Channel {
             num_idl_samples: 0,
             num_trk_samples: 0,
 
-            state: State::ACQUISITION,
+            state: State::Acquisition,
             nav: Navigation::new(sv),
             hist: History::default(),
             trk: Tracking {
@@ -187,11 +187,11 @@ impl Channel {
     }
 
     fn idle_start(&mut self) {
-        if self.state == State::TRACKING {
+        if self.state == State::Tracking {
             log::warn!(
                 "{}: {} cn0={:.1} ts_sec={:.3}",
                 self.sv,
-                format!("LOST").red(),
+                "LOST".to_string().red(),
                 self.trk.cn0,
                 self.ts_sec,
             );
@@ -203,7 +203,7 @@ impl Channel {
                 self.ts_sec,
             );
         }
-        self.state = State::IDLE;
+        self.state = State::Idle;
         self.num_idl_samples = 0;
         self.num_trk_samples = 0;
         self.num_acq_samples = 0;
@@ -225,7 +225,7 @@ impl Channel {
 
     fn acquisition_start(&mut self) {
         self.acquisition_init();
-        self.state = State::ACQUISITION;
+        self.state = State::Acquisition;
     }
 
     fn tracking_init(&mut self) {
@@ -255,11 +255,11 @@ impl Channel {
         log::warn!(
             "{}: {} cn0={cn0:.1} dopp={doppler_hz:5.0} code_off={code_offset_idx:4} ts_sec={:.3}",
             self.sv,
-            format!("LOCK").green(),
+            "LOCK".to_string().green(),
             self.ts_sec,
         );
         self.tracking_init();
-        self.state = State::TRACKING;
+        self.state = State::Tracking;
 
         self.trk.code_off_sec = code_off_sec;
         self.trk.doppler_hz = doppler_hz;
@@ -549,7 +549,7 @@ impl Channel {
             log::warn!(
                 "{}: {} cn0={:.1} dopp={:5.0} code_idx={:4.0} phi={:5.2} ts_sec={:.3}",
                 self.sv,
-                format!("TRCK").green(),
+                "TRCK".to_string().green(),
                 self.trk.cn0,
                 self.trk.doppler_hz,
                 code_idx,
@@ -594,7 +594,7 @@ impl Channel {
     pub fn process_samples(&mut self, iq_vec: &Vec<Complex64>, ts_sec: f64) {
         self.ts_sec = ts_sec;
 
-        if false && self.state != State::IDLE {
+        if false && self.state != State::Idle {
             log::info!(
                 "{}: processing: ts={:.3}: cn0={:.1} dopp={:5.0} code_off_sec={:2.6}",
                 self.sv,
@@ -606,9 +606,9 @@ impl Channel {
         }
 
         match self.state {
-            State::ACQUISITION => self.acquisition_process(iq_vec),
-            State::TRACKING => self.tracking_process(iq_vec),
-            State::IDLE => self.idle_process(),
+            State::Acquisition => self.acquisition_process(iq_vec),
+            State::Tracking => self.tracking_process(iq_vec),
+            State::Idle => self.idle_process(),
         }
     }
 }

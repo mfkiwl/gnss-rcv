@@ -24,9 +24,9 @@ static GPS_ALMANAC: Lazy<Mutex<Vec<Almanac>>> =
 #[derive(PartialEq, Debug, Default)]
 enum SyncState {
     #[default]
-    NORMAL,
-    REVERSED,
-    NONE,
+    Normal,
+    Reversed,
+    None,
 }
 
 #[derive(Default)]
@@ -42,7 +42,7 @@ pub struct Navigation {
 impl Navigation {
     pub fn new(sv: SV) -> Self {
         Self {
-            sync_state: SyncState::NORMAL,
+            sync_state: SyncState::Normal,
             bits: vec![0; SDR_MAX_NSYM],
             eph: Ephemeris::new(sv),
             ..Default::default()
@@ -52,7 +52,7 @@ impl Navigation {
     pub fn init(&mut self) {
         self.bit_sync = 0;
         self.nav_sync = 0;
-        self.sync_state = SyncState::NORMAL;
+        self.sync_state = SyncState::Normal;
         self.bits.fill(0);
     }
 }
@@ -79,14 +79,14 @@ impl Channel {
         let bits = &self.nav.bits[SDR_MAX_NSYM - 308..];
         let bits_beg = &bits[0..preambule.len()];
         let bits_end = &bits[300..300 + preambule.len()];
-        let mut sync_state = SyncState::NONE;
+        let mut sync_state = SyncState::None;
 
         if bits_equal(preambule, bits_beg) && bits_equal(preambule, bits_end) {
-            sync_state = SyncState::NORMAL;
+            sync_state = SyncState::Normal;
         } else if bits_opposed(preambule, bits_beg) && bits_opposed(preambule, bits_end) {
-            sync_state = SyncState::REVERSED;
+            sync_state = SyncState::Reversed;
         }
-        if sync_state != SyncState::NONE {
+        if sync_state != SyncState::None {
             log::info!(
                 "{}: FRAME SYNC {sync_state:?}: ts={:.3}",
                 self.sv,
@@ -128,8 +128,8 @@ impl Channel {
                 return true;
             } else {
                 self.nav.bit_sync = 0;
-                self.nav.sync_state = SyncState::NORMAL;
-                log::info!("{}: SYNC {} p={}", self.sv, format!("LOST").red(), p)
+                self.nav.sync_state = SyncState::Normal;
+                log::info!("{}: SYNC {} p={}", self.sv, "LOST".to_string().red(), p)
             }
         }
         false
@@ -207,7 +207,7 @@ impl Channel {
         log::warn!(
             "{}: {}: data_id={data_id} svid={svid} tow={}",
             self.sv,
-            format!("subframe-4").blue(),
+            "subframe-4".to_string().blue(),
             self.nav.eph.tow
         );
     }
@@ -298,7 +298,7 @@ impl Channel {
     }
 
     fn nav_decode_lnav(&mut self, sync: SyncState) {
-        let rev = if sync == SyncState::NORMAL { 0 } else { 1 };
+        let rev = if sync == SyncState::Normal { 0 } else { 1 };
         let bits_len = self.nav.bits.len();
         let bits_raw = &self.nav.bits[bits_len - 308..bits_len - 8];
         let bits: Vec<_> = bits_raw.iter().map(|v| v ^ rev).collect();
@@ -313,7 +313,7 @@ impl Channel {
             log::info!("{}: LNAV: id={id} -- {hex_str}", self.sv);
         } else {
             self.nav.nav_sync = 0;
-            self.nav.sync_state = SyncState::NORMAL;
+            self.nav.sync_state = SyncState::Normal;
             self.nav.count_parity_err += 1;
 
             log::warn!("{}: PARITY ERROR", self.sv);
@@ -373,11 +373,11 @@ impl Channel {
             } else if self.num_trk_samples > self.nav.nav_sync + 300 * 20 {
                 self.nav.nav_sync = 0;
                 self.nav.bit_sync = 0;
-                self.nav.sync_state = SyncState::NORMAL;
+                self.nav.sync_state = SyncState::Normal;
             }
         } else if self.num_trk_samples >= 20 * 308 + 1000 {
             let sync = self.nav_get_frame_sync_state(preambule);
-            if sync != SyncState::NONE {
+            if sync != SyncState::None {
                 self.nav_decode_lnav(sync);
             }
         }

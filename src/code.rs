@@ -54,8 +54,8 @@ impl Code {
 
     pub fn gen_code(sig: &str, prn: u8) -> Option<Vec<i8>> {
         match sig {
-            "L1CA" => return Some(Self::gen_l1ca_code(prn)),
-            _ => return None,
+            "L1CA" => Some(Self::gen_l1ca_code(prn)),
+            _ => None,
         }
     }
 

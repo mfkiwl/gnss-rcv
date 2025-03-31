@@ -73,7 +73,7 @@ impl Ephemeris {
 
         log::warn!(
             "{sv}: {} tow={} week={} sva={} svh={} iodc={} tgd={:+e} toc={} a0={:+e} a1={:+e} a2={:+e}",
-            format!("subframe-1").blue(),
+            "subframe-1".to_string().blue(),
             self.tow,
             self.week,
             self.sva,
@@ -103,7 +103,7 @@ impl Ephemeris {
 
         log::warn!(
             "{sv}: {} tow={} a={} iode={} crs={} crc={} cuc={:+e} cus={:+e} ecc={} m0={} toe={}",
-            format!("subframe-2").blue(),
+            "subframe-2".to_string().blue(),
             self.tow,
             self.a,
             self.iode,
@@ -131,7 +131,7 @@ impl Ephemeris {
 
         log::warn!(
             "{sv}: {} tow={} cic={:+e} cis={:+e} omg={} omg0={} omgd={:+e} i0={} idot={:+e}",
-            format!("subframe-3").blue(),
+            "subframe-3".to_string().blue(),
             self.tow,
             self.cic,
             self.cis,
