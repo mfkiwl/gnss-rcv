@@ -115,7 +115,7 @@ impl RtlSdrDevice {
             vec.push(v_front[i]);
         }
         let _ = v_front.drain(0..n);
-        if v_front.len() == 0 {
+        if v_front.is_empty() {
             let _ = iq_deq.pop_front();
         }
 

@@ -7,11 +7,24 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Build release",
+            "name": "Launch",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=gnss-test",
+                    "--bin=gnss-rcv",
+                ]
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Launch release",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=gnss-rcv",
                     "--release",
                 ]
             },
@@ -25,11 +38,11 @@
             "cargo": {
                 "args": [
                     "run",
-                    "--bin=gnss-test",
+                    "--bin=gnss-rcv",
                     "--release",
                 ],
                 "filter": {
-                    "name": "gnss-test",
+                    "name": "gnss-rcv",
                     "kind": "bin"
                 }
             },

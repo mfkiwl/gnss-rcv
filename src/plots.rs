@@ -151,7 +151,7 @@ pub fn plot_iq_scatter(sv: SV, series: &[Complex64]) {
     ctx.draw_series(
         series
             .iter()
-            .map(|c| Circle::new((c.re * factor, c.im * factor), 1, &RED)),
+            .map(|c| Circle::new((c.re * factor, c.im * factor), 1, RED)),
     )
     .unwrap();
 }

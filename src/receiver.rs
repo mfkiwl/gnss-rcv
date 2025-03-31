@@ -54,7 +54,7 @@ impl Receiver {
     }
 
     fn fetch_samples_msec(&mut self) -> Result<(Vec<Complex64>, f64), Box<dyn std::error::Error>> {
-        let num_samples = if self.cached_iq_vec.len() == 0 {
+        let num_samples = if self.cached_iq_vec.is_empty() {
             2 * self.period_sp
         } else {
             self.period_sp

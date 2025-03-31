@@ -3,36 +3,37 @@ use std::ops::Mul;
 
 const PI: f64 = std::f64::consts::PI;
 
-pub fn norm_square(v: &Vec<Complex64>) -> f64 {
+pub fn norm_square(v: &[Complex64]) -> f64 {
     v.iter().map(|&x| x.norm_sqr()).sum::<f64>()
 }
 
-pub fn norm(v: &Vec<Complex64>) -> f64 {
+pub fn norm(v: &[Complex64]) -> f64 {
     norm_square(v).sqrt()
 }
 
-pub fn get_max_with_idx(v: &Vec<f64>) -> (usize, f64) {
+pub fn get_max_with_idx(vec: &[f64]) -> (usize, f64) {
     let mut max = 0.0f64;
     let mut idx = 0;
-    for i in 0..v.len() {
-        if v[i] > max {
-            max = v[i];
+    for (i, v) in vec.iter().enumerate() {
+        if *v > max {
+            max = *v;
             idx = i;
         }
     }
+
     (idx, max)
 }
 
-pub fn get_average(v: &Vec<f64>) -> f64 {
+pub fn get_average(v: &[f64]) -> f64 {
     v.iter().sum::<f64>() / v.len() as f64
 }
 
-fn normalize_post_fft(data: &mut Vec<Complex64>) {
+fn normalize_post_fft(data: &mut [Complex64]) {
     let len = data.len() as f64;
     data.iter_mut().for_each(|x| *x /= len);
 }
 
-pub fn correlate_vec(a: &Vec<Complex64>, b: &Vec<Complex64>) -> Complex64 {
+pub fn correlate_vec(a: &[Complex64], b: &[Complex64]) -> Complex64 {
     let mut sum = Complex64 { re: 0.0, im: 0.0 };
     for i in 0..a.len() {
         sum += a[i].mul(b[i].conj());
@@ -42,14 +43,14 @@ pub fn correlate_vec(a: &Vec<Complex64>, b: &Vec<Complex64>) -> Complex64 {
 
 pub fn calc_correlation(
     fft_planner: &mut FftPlanner<f64>,
-    iq_vec: &Vec<Complex64>,
-    prn_code_fft: &Vec<Complex64>,
+    iq_vec: &[Complex64],
+    prn_code_fft: &[Complex64],
 ) -> Vec<Complex64> {
     let num_samples = iq_vec.len();
     assert_eq!(iq_vec.len(), prn_code_fft.len());
     let fft_fw = fft_planner.plan_fft_forward(num_samples);
 
-    let mut iq_samples_fft = iq_vec.clone();
+    let mut iq_samples_fft = iq_vec.to_owned();
 
     fft_fw.process(&mut iq_samples_fft);
 
@@ -75,13 +76,13 @@ fn doppler_shifted_carrier(doppler_hz: f64, phi: f64, fs: f64, len: usize) -> Ve
     carrier
 }
 
-pub fn doppler_shift(iq_vec: &mut Vec<Complex64>, doppler_hz: f64, phi: f64, fs: f64) {
+pub fn doppler_shift(iq_vec: &mut [Complex64], doppler_hz: f64, phi: f64, fs: f64) {
     let carrier = doppler_shifted_carrier(doppler_hz, phi, fs, iq_vec.len());
 
     assert_eq!(iq_vec.len(), carrier.len());
 
     for i in 0..iq_vec.len() {
-        iq_vec[i] = iq_vec[i] * carrier[i];
+        iq_vec[i] *= carrier[i];
     }
 }
 
@@ -168,6 +169,6 @@ pub fn setbitu(buf: &mut [u8], pos: usize, len: usize, data: u32) {
         } else {
             buf[i / 8] &= !bit;
         }
-        mask = mask >> 1;
+        mask >>= 1;
     }
 }

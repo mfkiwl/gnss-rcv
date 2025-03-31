@@ -326,7 +326,7 @@ impl Channel {
         plot_time_graph(
             self.sv,
             "doppler-hz",
-            &self.hist.doppler_hz.as_slice(),
+            self.hist.doppler_hz.as_slice(),
             10.0,
             &BLACK,
         );
@@ -335,10 +335,10 @@ impl Channel {
     fn plot_iq_scatter(&self) {
         let len = self.hist.corr_p.len();
         let n = usize::min(len, 2000);
-        plot_iq_scatter(self.sv, &&self.hist.corr_p[len - n..len]);
+        plot_iq_scatter(self.sv, &self.hist.corr_p[len - n..len]);
     }
 
-    fn acquisition_process(&mut self, iq_vec: &Vec<Complex64>) {
+    fn acquisition_process(&mut self, iq_vec: &[Complex64]) {
         // only take the last minute worth of data
         let iq_vec_slice = &iq_vec[self.code_sp..];
         let step_hz = 2.0 * DOPPLER_SPREAD_HZ / DOPPLER_SPREAD_BINS as f64;
@@ -391,7 +391,7 @@ impl Channel {
 
     fn tracking_compute_correlation(
         &mut self,
-        iq_vec2: &Vec<Complex64>,
+        iq_vec2: &[Complex64],
     ) -> (Complex64, Complex64, Complex64, Complex64) {
         let n = self.code_sp as i32;
         let code_idx = *self.hist.code_phase_offset.last().unwrap() as i32;

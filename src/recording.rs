@@ -122,7 +122,7 @@ impl IQRecording {
                 IQFileType::TypeOneInt8 => {
                     for off in 0..len {
                         iq_vec.push(Complex64 {
-                            re: buf[off] as i8 as f64 / std::i8::MAX as f64,
+                            re: buf[off] as i8 as f64 / i8::MAX as f64,
                             im: 0.0,
                         });
                         n += 1;
@@ -136,8 +136,8 @@ impl IQRecording {
                         let i = i16::from_le_bytes([buf[off + 0], buf[off + 1]]);
                         let q = i16::from_le_bytes([buf[off + 2], buf[off + 3]]);
                         iq_vec.push(Complex64 {
-                            re: i as f64 / std::i16::MAX as f64,
-                            im: q as f64 / std::i16::MAX as f64,
+                            re: i as f64 / i16::MAX as f64,
+                            im: q as f64 / i16::MAX as f64,
                         });
                         n += 1;
                         if n >= num_samples {
@@ -159,8 +159,8 @@ impl IQRecording {
                             buf[off + 6],
                             buf[off + 7],
                         ]);
-                        assert!(-1.0 <= i && i <= 1.0);
-                        assert!(-1.0 <= q && q <= 1.0);
+                        assert!((-1.0..=1.0).contains(&i));
+                        assert!((-1.0..=1.0).contains(&q));
                         iq_vec.push(Complex64 {
                             re: i as f64,
                             im: q as f64,

@@ -21,16 +21,12 @@ const THRESHOLD_LOST: f64 = 0.03; // 0.002
 static GPS_ALMANAC: Lazy<Mutex<Vec<Almanac>>> =
     Lazy::new(|| Mutex::new(vec![Almanac::default(); 32]));
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Default)]
 enum SyncState {
+    #[default]
     NORMAL,
     REVERSED,
     NONE,
-}
-impl Default for SyncState {
-    fn default() -> Self {
-        SyncState::NORMAL
-    }
 }
 
 #[derive(Default)]
@@ -158,7 +154,7 @@ impl Channel {
 
         if data_id == 1 {
             let alm_array = GPS_ALMANAC.lock().unwrap();
-            if 25 <= svid && svid <= 32 {
+            if (25..=32).contains(&svid) {
                 let mut alm = alm_array[svid as usize - 1];
                 alm.nav_decode_alm(buf, svid);
                 log::warn!("{}: {:?}", self.sv, alm);
@@ -223,7 +219,7 @@ impl Channel {
 
         if data_id == 1 {
             let alm_array = GPS_ALMANAC.lock().unwrap();
-            if 1 <= svid && svid <= 24 {
+            if (1..=24).contains(&svid) {
                 let mut alm = alm_array[svid as usize];
                 alm.nav_decode_alm(buf, svid);
                 log::warn!("{}: {:?}", self.sv, alm);
@@ -324,7 +320,7 @@ impl Channel {
         }
     }
 
-    fn nav_test_lnav_parity(bits: &Vec<u8>, nav_data: &mut [u8]) -> bool {
+    fn nav_test_lnav_parity(bits: &[u8], nav_data: &mut [u8]) -> bool {
         const MASK: [u32; 6] = [
             0x2EC7CD2, 0x1763E69, 0x2BB1F34, 0x15D8F9A, 0x1AEC7CD, 0x22DEA27,
         ];

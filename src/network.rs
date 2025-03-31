@@ -46,12 +46,12 @@ fn rtl_sdr_send_cmd(socket: &mut TcpStream, cmd: u8, param: u32) -> std::io::Res
 
 impl RtlSdrTcp {
     pub fn new(
-        hostname: &String,
+        hostname: &str,
         exit_req: Arc<AtomicBool>,
         sig: &str,
         fs: f64,
     ) -> std::io::Result<RtlSdrTcp> {
-        let mut socket = TcpStream::connect(hostname.clone())?;
+        let mut socket = TcpStream::connect(hostname)?;
 
         let mut m = RtlSdrTcp {
             iq_deque: Arc::new(Mutex::new(VecDeque::new())),
@@ -127,7 +127,7 @@ impl RtlSdrTcp {
             vec.push(v_front[i]);
         }
         let _ = v_front.drain(0..n);
-        if v_front.len() == 0 {
+        if v_front.is_empty() {
             let _ = iq_deq.pop_front();
         }
 
