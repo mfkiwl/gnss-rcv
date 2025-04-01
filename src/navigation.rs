@@ -252,7 +252,7 @@ impl Channel {
         log::warn!(
             "{}: {}: data_id={data_id} svid={svid} tow={}",
             self.sv,
-            format!("subframe-5").blue(),
+            "subframe-5".to_string().blue(),
             self.nav.eph.tow
         );
     }

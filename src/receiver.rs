@@ -9,8 +9,10 @@ use crate::solver::PositionSolver;
 
 const PERIOD_RCV: f64 = 0.001;
 
+pub type ReadIQFn = dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>;
+
 pub struct Receiver {
-    read_iq_fn: Box<dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>>,
+    read_iq_fn: Box<ReadIQFn>,
     period_sp: usize, // samples per period
     fs: f64,
     fi: f64,
@@ -23,14 +25,7 @@ pub struct Receiver {
 }
 
 impl Receiver {
-    pub fn new(
-        read_iq_fn: Box<
-            dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>,
-        >,
-        fs: f64,
-        fi: f64,
-        off_msec: usize,
-    ) -> Self {
+    pub fn new(read_iq_fn: Box<ReadIQFn>, fs: f64, fi: f64, off_msec: usize) -> Self {
         let period_sp = (PERIOD_RCV * fs) as usize;
         Self {
             read_iq_fn,

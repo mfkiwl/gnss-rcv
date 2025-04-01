@@ -560,9 +560,9 @@ impl Channel {
         }
     }
 
-    fn tracking_process(&mut self, iq_vec: &Vec<Complex64>) {
+    fn tracking_process(&mut self, iq_vec: &[Complex64]) {
         self.get_code_and_carrier_phase();
-        let (c_p, c_e, c_l, c_n) = self.tracking_compute_correlation(&iq_vec);
+        let (c_p, c_e, c_l, c_n) = self.tracking_compute_correlation(iq_vec);
         self.hist.corr_p.push(c_p);
         self.num_trk_samples += 1;
 

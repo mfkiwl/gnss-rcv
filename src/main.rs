@@ -7,7 +7,6 @@ use gnss_rcv::plots::plot_remove_old_graph;
 use gnss_rs::constellation::Constellation;
 use gnss_rs::sv::SV;
 use log::LevelFilter;
-use rustfft::num_complex::Complex64;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -17,11 +16,10 @@ use std::time::Instant;
 use structopt::StructOpt;
 
 use gnss_rcv::code::Code;
+use gnss_rcv::receiver::ReadIQFn;
 use gnss_rcv::receiver::Receiver;
 use gnss_rcv::recording::IQFileType;
 use gnss_rcv::recording::IQRecording;
-
-type ReadIQFn = dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>;
 
 #[derive(StructOpt)]
 #[structopt(name = "gnss-rcv", about = "GNSS receiver")]
