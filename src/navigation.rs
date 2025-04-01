@@ -334,7 +334,7 @@ impl Channel {
             if data & (1 << 30) != 0 {
                 data ^= 0x3FFFFFC0;
             }
-#[allow(clippy::needless_range_loop)]
+            #[allow(clippy::needless_range_loop)]
             for j in 0..6 {
                 let v0 = (data >> 6) & MASK[j];
                 let v1: u8 = ((data >> (5 - j)) & 1) as u8;
@@ -366,7 +366,7 @@ impl Channel {
         }
 
         if self.nav.nav_sync > 0 {
-#[allow(clippy::comparison_chain)]
+            #[allow(clippy::comparison_chain)]
             if self.num_trk_samples == self.nav.nav_sync + 300 * 20 {
                 let sync = self.nav_get_frame_sync_state(preambule);
                 if sync == self.nav.sync_state {

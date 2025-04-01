@@ -50,6 +50,8 @@ struct Options {
     num_msec: usize,
     #[structopt(long, help = "satellites to use", default_value = "")]
     sats: String,
+    #[structopt(short = "-u", long, help = "use ui")]
+    use_ui: bool,
 }
 
 fn init_logging(log_file: &PathBuf) {
@@ -152,6 +154,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         read_fn = Box::new(move |off_samples, num_samples| {
             recording.read_iq_file(off_samples, num_samples)
         });
+    }
+
+    if opt.use_ui {
+        gnss_rcv::egui_main();
+        return Ok(());
     }
 
     let mut receiver = Receiver::new(read_fn, opt.fs, opt.fi, opt.off_msec);

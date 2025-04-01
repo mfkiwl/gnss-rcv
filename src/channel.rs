@@ -98,9 +98,9 @@ pub struct Channel {
     fs: f64, // sampling frequency
     fi: f64, // intermediate frequency
 
-    code_sec: f64,  // code duration in sec
-    code_len: f64,  // prn code len: e.g. 1023
-    code_sp: usize, // samples per upsampled code: e.g. 2046 for L1CA
+    code_sec: f64,   // code duration in sec
+    code_len: usize, // prn code len: e.g. 1023
+    code_sp: usize,  // samples per upsampled code: e.g. 2046 for L1CA
 
     fft_planner: FftPlanner<f64>,
     state: State,
@@ -348,7 +348,7 @@ impl Channel {
             let c_non_coherent = self.acquisition_integrate_correlation(iq_vec_slice, doppler_hz);
             assert_eq!(c_non_coherent.len(), self.code_sp);
 
-#[allow(clippy::needless_range_loop)]
+            #[allow(clippy::needless_range_loop)]
             for j in 0..self.code_sp {
                 self.acq.sum_p[i][j] += c_non_coherent[j];
             }
@@ -414,7 +414,7 @@ impl Channel {
 
         doppler_shift(&mut signal, self.trk.doppler_hz, self.trk.phi, self.fs);
 
-        let pos = (SP_CORR * self.code_sec * self.fs / self.code_len) as usize;
+        let pos = (SP_CORR * self.code_sec * self.fs / self.code_len as f64) as usize;
 
         let mut corr_prompt = Complex64::default();
         let mut corr_early = Complex64::default();
@@ -428,7 +428,7 @@ impl Channel {
         corr_prompt /= signal.len() as f64;
 
         // EARLY:
-#[allow(clippy::needless_range_loop)]
+        #[allow(clippy::needless_range_loop)]
         for j in 0..signal.len() - pos {
             corr_early += signal[j] * self.trk.prn_code[pos + j];
         }
@@ -442,7 +442,7 @@ impl Channel {
 
         // NEUTRAL:
         let pos_neutral: usize = 80;
-#[allow(clippy::needless_range_loop)]
+        #[allow(clippy::needless_range_loop)]
         for j in 0..signal.len() - pos_neutral {
             corr_neutral += signal[j] * self.trk.prn_code[pos_neutral + j];
         }
@@ -495,7 +495,7 @@ impl Channel {
         if self.num_trk_samples % n == 0 {
             let e = self.trk.sum_corr_e;
             let l = self.trk.sum_corr_l;
-            let err_code = (e - l) / (e + l) / 2.0 * self.code_sec / self.code_len;
+            let err_code = (e - l) / (e + l) / 2.0 * self.code_sec / self.code_len as f64;
             self.trk.code_off_sec -= B_DLL / 0.25 * err_code * self.code_sec * n as f64;
             self.trk.sum_corr_e = 0.0;
             self.trk.sum_corr_l = 0.0;
@@ -597,7 +597,7 @@ impl Channel {
     pub fn process_samples(&mut self, iq_vec: &[Complex64], ts_sec: f64) {
         self.ts_sec = ts_sec;
 
-#[allow(clippy::overly_complex_bool_expr)]
+        #[allow(clippy::overly_complex_bool_expr)]
         if false && self.state != State::Idle {
             log::info!(
                 "{}: processing: ts={:.3}: cn0={:.1} dopp={:5.0} code_off_sec={:2.6}",
