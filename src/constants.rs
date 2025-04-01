@@ -15,4 +15,5 @@ pub const P2_43: f64 = 1.136_868_377_216_16e-13; /* 2^-43 */
 pub const P2_50: f64 = 8.881_784_197_001_252e-16; /* 2^-50 */
 pub const P2_55: f64 = 2.775_557_561_562_891e-17; /* 2^-55 */
 
+#[allow(clippy::approx_constant)]
 pub const SC2RAD: f64 = 3.141_592_653_589_8; /* semi-circle to radian (IS-GPS) */

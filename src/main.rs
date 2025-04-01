@@ -62,7 +62,7 @@ fn init_logging(log_file: &PathBuf) {
             .format(|buf, record| {
                 writeln!(
                     buf,
-                    "{} {} {:<5}",
+                    "{} {} {}",
                     Local::now().format("%Y-%m-%dT%H:%M:%S%.3fZ"),
                     record.level(),
                     record.args()
@@ -90,16 +90,16 @@ fn get_sat_list(opt: &Options) -> Vec<SV> {
     let mut sat_vec: Vec<SV> = vec![];
     if !opt.sats.is_empty() {
         for s in opt.sats.split(',') {
-            let prn = u8::from_str_radix(s, 10).unwrap();
+            let prn = s.parse::<u8>().unwrap();
             sat_vec.push(SV::new(Constellation::GPS, prn));
         }
     } else {
-        for prn in 1..=32 as u8 {
+        for prn in 1..=32_u8 {
             sat_vec.push(SV::new(Constellation::GPS, prn));
         }
         let use_sbas = false;
         if use_sbas {
-            for prn in 120..=158 as u8 {
+            for prn in 120..=158_u8 {
                 sat_vec.push(SV::new(Constellation::GPS, prn));
             }
         }

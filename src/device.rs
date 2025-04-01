@@ -27,6 +27,7 @@ impl Drop for RtlSdrDevice {
 }
 
 impl RtlSdrDevice {
+#[allow(clippy::result_unit_err)]
     pub fn new(sig: &str, fs: f64) -> Result<RtlSdrDevice, ()> {
         let devices = rtlsdr_mt::devices();
 

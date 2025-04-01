@@ -348,6 +348,7 @@ impl Channel {
             let c_non_coherent = self.acquisition_integrate_correlation(iq_vec_slice, doppler_hz);
             assert_eq!(c_non_coherent.len(), self.code_sp);
 
+#[allow(clippy::needless_range_loop)]
             for j in 0..self.code_sp {
                 self.acq.sum_p[i][j] += c_non_coherent[j];
             }
@@ -421,12 +422,13 @@ impl Channel {
         let mut corr_neutral = Complex64::default();
 
         // PROMPT
-        for j in 0..signal.len() {
-            corr_prompt += signal[j] * self.trk.prn_code[j];
+        for (j, sig_val) in signal.iter().enumerate() {
+            corr_prompt += sig_val * self.trk.prn_code[j];
         }
         corr_prompt /= signal.len() as f64;
 
         // EARLY:
+#[allow(clippy::needless_range_loop)]
         for j in 0..signal.len() - pos {
             corr_early += signal[j] * self.trk.prn_code[pos + j];
         }
@@ -440,6 +442,7 @@ impl Channel {
 
         // NEUTRAL:
         let pos_neutral: usize = 80;
+#[allow(clippy::needless_range_loop)]
         for j in 0..signal.len() - pos_neutral {
             corr_neutral += signal[j] * self.trk.prn_code[pos_neutral + j];
         }
@@ -591,9 +594,10 @@ impl Channel {
         }
     }
 
-    pub fn process_samples(&mut self, iq_vec: &Vec<Complex64>, ts_sec: f64) {
+    pub fn process_samples(&mut self, iq_vec: &[Complex64], ts_sec: f64) {
         self.ts_sec = ts_sec;
 
+#[allow(clippy::overly_complex_bool_expr)]
         if false && self.state != State::Idle {
             log::info!(
                 "{}: processing: ts={:.3}: cn0={:.1} dopp={:5.0} code_off_sec={:2.6}",

@@ -35,6 +35,7 @@ impl Code {
             r2[0] = c2;
         }
         let mut j = L1CA_CODE_LEN - G2_DELAY[(prn - 1) as usize];
+#[allow(clippy::needless_range_loop)]
         for i in 0..L1CA_CODE_LEN {
             let v = -g1[i] * g2[j % L1CA_CODE_LEN];
             g.push(v);

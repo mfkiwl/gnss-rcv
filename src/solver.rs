@@ -124,6 +124,7 @@ fn sv_interp(t: Epoch, sv: SV, _size: usize) -> Option<InterpolationResult> {
 }
 
 impl PositionSolver {
+#[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         let apriori = AprioriPosition::from_geo(Vector3::new(46.5, 6.6, 0.0));
         let mut cfg = Config::static_preset(Method::SPP);

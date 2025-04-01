@@ -67,7 +67,7 @@ impl IQRecording {
 
     fn get_sample_size_bytes(file_type: &IQFileType) -> usize {
         match file_type {
-            IQFileType::TypeRtlSdrFile => 2 * 1,
+            IQFileType::TypeRtlSdrFile => 2,
             IQFileType::TypeOneInt8 => 1,
             IQFileType::TypePairInt16 => 2 * 2,
             IQFileType::TypePairFloat32 => 2 * 4,
