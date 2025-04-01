@@ -90,7 +90,7 @@ impl RtlSdrTcp {
                 }
 
                 for i in 0..data.len() / 2 {
-                    let re = (data[2 * i]     as f64 - 127.3) / 128.0;
+                    let re = (data[2 * i] as f64 - 127.3) / 128.0;
                     let im = (data[2 * i + 1] as f64 - 127.3) / 128.0;
 
                     v[i] = Complex64 { re, im };

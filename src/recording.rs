@@ -110,7 +110,7 @@ impl IQRecording {
                 IQFileType::TypeRtlSdrFile => {
                     for off in (0..len).step_by(2) {
                         iq_vec.push(Complex64 {
-                            re: (buf[off]     as f64 - 127.3) / 128.0,
+                            re: (buf[off] as f64 - 127.3) / 128.0,
                             im: (buf[off + 1] as f64 - 127.3) / 128.0,
                         });
                         n += 1;
@@ -133,7 +133,7 @@ impl IQRecording {
                 }
                 IQFileType::TypePairInt16 => {
                     for off in (0..len).step_by(4) {
-                        let i = i16::from_le_bytes([buf[off],     buf[off + 1]]);
+                        let i = i16::from_le_bytes([buf[off], buf[off + 1]]);
                         let q = i16::from_le_bytes([buf[off + 2], buf[off + 3]]);
                         iq_vec.push(Complex64 {
                             re: i as f64 / i16::MAX as f64,
