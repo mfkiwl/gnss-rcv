@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    - main
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: install dependencies
+      run: sudo apt-get install -y libfontconfig1-dev librtlsdr-dev
+    - name: use stable toolchain
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: stable
+    - name: build
+      run: cargo build --verbose
+

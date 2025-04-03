@@ -1,7 +1,8 @@
-name: CI
+name: MacOS
 
 on:
   push:
+    - main
   pull_request:
 
 env:
@@ -9,7 +10,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     strategy:
       matrix:
         toolchain:
@@ -17,8 +18,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: install dependencies
-      run: sudo apt-get install -y libfontconfig1-dev librtlsdr-dev
+      run: brew install librtlsdr
     - name: use stable toolchain
       uses: dtolnay/rust-toolchain@master
       with:

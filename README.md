@@ -1,4 +1,5 @@
-[![CI](https://github.com/mx4/gnss-rcv/actions/workflows/ci.yml/badge.svg)](https://github.com/mx4/gnss-rcv/actions/workflows/ci.yml)
+[![Linux](https://github.com/mx4/gnss-rcv/actions/workflows/linux.yml/badge.svg)](https://github.com/mx4/gnss-rcv/actions/workflows/linux.yml)
+[![MacOS](https://github.com/mx4/gnss-rcv/actions/workflows/macos.yml/badge.svg)](https://github.com/mx4/gnss-rcv/actions/workflows/macos.yml)
 
 # gnss-rcv: GNSS receiver for GPS L1 signal in Rust
 This app takes as input:
