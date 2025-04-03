@@ -3,6 +3,8 @@ use gnss_rs::sv::SV;
 use rayon::prelude::*;
 use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::channel::Channel;
 use crate::solver::PositionSolver;
@@ -14,8 +16,6 @@ pub type ReadIQFn = dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn st
 pub struct Receiver {
     read_iq_fn: Box<ReadIQFn>,
     period_sp: usize, // samples per period
-    fs: f64,
-    fi: f64,
     off_samples: usize,
     cached_iq_vec: Vec<Complex64>,
     cached_ts_sec_tail: f64,
@@ -25,26 +25,30 @@ pub struct Receiver {
 }
 
 impl Receiver {
-    pub fn new(read_iq_fn: Box<ReadIQFn>, fs: f64, fi: f64, off_msec: usize) -> Self {
+    pub fn new(
+        read_iq_fn: Box<ReadIQFn>,
+        fs: f64,
+        fi: f64,
+        off_msec: usize,
+        sig: &str,
+        sat_vec: &[SV],
+    ) -> Self {
         let period_sp = (PERIOD_RCV * fs) as usize;
+        let mut channels = HashMap::<SV, Channel>::new();
+
+        for sv in sat_vec {
+            channels.insert(*sv, Channel::new(sig, *sv, fs, fi));
+        }
+
         Self {
             read_iq_fn,
             period_sp,
-            fs,
-            fi,
             off_samples: off_msec * period_sp,
             cached_iq_vec: Vec::<Complex64>::new(),
             cached_ts_sec_tail: 0.0,
-            channels: HashMap::<SV, Channel>::new(),
+            channels,
             solver: PositionSolver::new(),
             last_fix_sec: 0.0,
-        }
-    }
-
-    pub fn init(&mut self, sig: &str, sat_vec: Vec<SV>) {
-        for sv in sat_vec {
-            self.channels
-                .insert(sv, Channel::new(sig, sv, self.fs, self.fi));
         }
     }
 
@@ -103,7 +107,7 @@ impl Receiver {
         self.last_fix_sec = ts_sec;
     }
 
-    pub fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn process_step(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let (iq_vec, ts_sec) = self.fetch_samples_msec()?;
 
         self.channels
@@ -113,5 +117,21 @@ impl Receiver {
         self.compute_fix(ts_sec);
 
         Ok(())
+    }
+
+    pub fn run_loop(&mut self, num_msec: usize, exit_req: Arc<AtomicBool>) {
+        let mut n = 0;
+        loop {
+            if self.process_step().is_err() {
+                break;
+            }
+            if exit_req.load(Ordering::SeqCst) {
+                break;
+            }
+            n += 1;
+            if num_msec != 0 && n >= num_msec {
+                break;
+            }
+        }
     }
 }

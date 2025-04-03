@@ -13,7 +13,7 @@ pub struct GnssRcvApp {
     iq_file_choice: usize,
     iq_type_choice: usize,
     needs_stop: Arc<AtomicBool>,
-    active: bool
+    active: bool,
 }
 
 impl Default for GnssRcvApp {
@@ -46,8 +46,7 @@ impl GnssRcvApp {
 pub fn egui_main() {
     info!("egui_main");
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([WIDTH as f32, HEIGHT as f32]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([WIDTH as f32, HEIGHT as f32]),
         ..eframe::NativeOptions::default()
     };
     eframe::run_native(
@@ -112,8 +111,10 @@ impl eframe::App for GnssRcvApp {
                     });
                     ui.end_row();
                     let button_text = if self.active { "stop" } else { "start" };
-                    if ui.add_sized([80.0, 25.],
-                                egui::Button::new(button_text.to_owned())).clicked() {
+                    if ui
+                        .add_sized([80.0, 25.], egui::Button::new(button_text.to_owned()))
+                        .clicked()
+                    {
                         if self.active {
                             self.stop_async();
                             self.active = false;
@@ -174,10 +175,10 @@ impl GnssRcvApp {
                     ui.strong("dB-Hz");
                 });
                 header.col(|ui| {
-                    ui.strong("detail-0");
+                    ui.strong("ephemeris");
                 });
                 header.col(|ui| {
-                    ui.strong("detail-1");
+                    ui.strong("almanac");
                 });
                 header.col(|ui| {
                     ui.strong("detail-2");
@@ -188,10 +189,10 @@ impl GnssRcvApp {
                     let row_height = 20.0;
                     body.row(row_height, |mut row| {
                         row.col(|ui| {
-                            ui.label(row_index.to_string());
+                            ui.label(format!("sv-{}", row_index).to_string());
                         });
                         row.col(|ui| {
-                            ui.label(format!("10 dB-Hz"));
+                            ui.label(format!("11"));
                         });
                         row.col(|ui| {
                             ui.label(format!("xyz"));

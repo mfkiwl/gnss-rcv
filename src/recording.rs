@@ -7,10 +7,12 @@ use std::fs::File;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::io::{BufRead, BufReader};
+use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
 
+#[derive(Clone)]
 pub enum IQFileType {
     TypePairFloat32,
     TypePairInt16,
@@ -48,9 +50,9 @@ pub struct IQRecording {
 }
 
 impl IQRecording {
-    pub fn new(file_path: PathBuf, fs: f64, file_type: IQFileType) -> Self {
+    pub fn new(file_path: &Path, fs: f64, file_type: &IQFileType) -> Self {
         let file_size = file_path.metadata().unwrap().len();
-        let sample_size = Self::get_sample_size_bytes(&file_type) as f64;
+        let sample_size = Self::get_sample_size_bytes(file_type) as f64;
         let recording_duration_sec = file_size as f64 / fs / sample_size;
 
         println!(
@@ -60,8 +62,8 @@ impl IQRecording {
             recording_duration_sec
         );
         Self {
-            file_path,
-            file_type,
+            file_path: file_path.to_path_buf(),
+            file_type: file_type.clone(),
         }
     }
 

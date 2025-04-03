@@ -93,6 +93,11 @@ WIP: same caveat
 - [Raw GPS Signal](http://www.jks.com/gps/gps.html)
 - [PocketSDR](https://github.com/tomojitakasu/PocketSDR/)
 
+## General info about GNSS
+- [GPS Spec: IS-GPS-200N.pdf](https://www.gps.gov/technical/icwg/IS-GPS-200N.pdf)
+- [GPS visualisation](https://ciechanow.ski/gps/)
+- [GPS signal](https://www.e-education.psu.edu/geog862/node/1407)
+
 ## TODO
 - finish position fix computation
 - test + fix rtlsdr support

@@ -89,7 +89,7 @@ fn init_ctrl_c(exit_req: Arc<AtomicBool>) {
 }
 
 fn get_sat_list(opt: &Options) -> Vec<SV> {
-    let mut sat_vec: Vec<SV> = vec![];
+    let mut sat_vec = vec![];
     if !opt.sats.is_empty() {
         for s in opt.sats.split(',') {
             let prn = s.parse::<u8>().unwrap();
@@ -107,6 +107,34 @@ fn get_sat_list(opt: &Options) -> Vec<SV> {
         }
     }
     sat_vec
+}
+
+fn get_reader_fn(opt: &Options, sig: &str, exit_req: Arc<AtomicBool>) -> Option<Box<ReadIQFn>> {
+    if opt.use_device {
+        let res = RtlSdrDevice::new(sig, opt.fs);
+        if res.is_err() {
+            log::warn!("Failed to open rtl-sdr device.");
+            return None;
+        }
+        let mut dev = res.unwrap();
+
+        Some(Box::new(move |_off_samples, num_samples| {
+            dev.read_iq_data(num_samples)
+        }))
+    } else if !opt.hostname.is_empty() {
+        let mut net = RtlSdrTcp::new(&opt.hostname, exit_req.clone(), sig, opt.fs).unwrap();
+
+        log::warn!("Using rtl_tcp backend: {}", opt.hostname);
+        Some(Box::new(move |_off_samples, num_samples| {
+            net.read_iq_data(num_samples)
+        }))
+    } else {
+        let mut recording = IQRecording::new(&opt.file, opt.fs, &opt.iq_file_type);
+
+        Some(Box::new(move |off_samples, num_samples| {
+            recording.read_iq_file(off_samples, num_samples)
+        }))
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -130,55 +158,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         opt.num_msec,
     );
 
-    let sat_vec: Vec<SV> = get_sat_list(&opt);
-    let read_fn: Box<ReadIQFn>;
+    let sat_vec = get_sat_list(&opt);
     let sig = "L1CA";
-
-    if opt.use_device {
-        let res = RtlSdrDevice::new(sig, opt.fs);
-        if res.is_err() {
-            log::warn!("Failed to open rtl-sdr device.");
-            return Ok(());
-        }
-        let mut dev = res.unwrap();
-
-        read_fn = Box::new(move |_off_samples, num_samples| dev.read_iq_data(num_samples));
-    } else if !opt.hostname.is_empty() {
-        let mut net = RtlSdrTcp::new(&opt.hostname, exit_req.clone(), sig, opt.fs)?;
-
-        log::warn!("Using rtl_tcp backend: {}", opt.hostname);
-        read_fn = Box::new(move |_off_samples, num_samples| net.read_iq_data(num_samples));
-    } else {
-        let mut recording = IQRecording::new(opt.file, opt.fs, opt.iq_file_type);
-
-        read_fn = Box::new(move |off_samples, num_samples| {
-            recording.read_iq_file(off_samples, num_samples)
-        });
-    }
 
     if opt.use_ui {
         gnss_rcv::egui_main();
         return Ok(());
     }
 
-    let mut receiver = Receiver::new(read_fn, opt.fs, opt.fi, opt.off_msec);
+    let read_fn = get_reader_fn(&opt, sig, exit_req.clone());
+    if read_fn.is_none() {
+        return Ok(());
+    }
 
-    receiver.init(sig, sat_vec);
-    let mut n = 0;
+    let mut receiver = Receiver::new(
+        read_fn.unwrap(),
+        opt.fs,
+        opt.fi,
+        opt.off_msec,
+        sig,
+        &sat_vec,
+    );
+
     let ts = Instant::now();
 
-    loop {
-        if receiver.process_step().is_err() {
-            break;
-        }
-        if exit_req.load(Ordering::SeqCst) {
-            break;
-        }
-        n += 1;
-        if opt.num_msec != 0 && n >= opt.num_msec {
-            break;
-        }
-    }
+    receiver.run_loop(opt.num_msec, exit_req.clone());
 
     println!("GNSS terminating: {:.2} sec", ts.elapsed().as_secs_f32());
     exit_req.store(true, Ordering::SeqCst);
