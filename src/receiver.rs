@@ -208,6 +208,7 @@ impl Receiver {
                 break;
             }
             if self.exit_req.load(Ordering::SeqCst) {
+                log::info!("exit requested");
                 break;
             }
             n += 1;

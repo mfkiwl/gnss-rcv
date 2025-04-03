@@ -1,31 +1,68 @@
 use egui_extras::{Column, TableBuilder};
 use egui_extras::{Size, StripBuilder};
-use log::info;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
+use std::thread;
+
+use crate::receiver::Receiver;
+use crate::recording::IQFileType;
 
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
 
 pub struct GnssRcvApp {
     iq_file: String,
+    iq_file_type: IQFileType,
     iq_file_choice: usize,
     iq_type_choice: usize,
     needs_stop: Arc<AtomicBool>,
-    active: bool,
+    active: Arc<AtomicBool>,
 }
 
 impl Default for GnssRcvApp {
     fn default() -> Self {
         Self {
             iq_file: "resources/nov_3_time_18_48_st_ives".to_owned(),
+            iq_file_type: IQFileType::TypePairFloat32,
             iq_file_choice: 0,
             iq_type_choice: 0,
-            active: false,
+            active: Arc::new(AtomicBool::new(false)),
             needs_stop: Arc::new(AtomicBool::new(false)),
         }
     }
+}
+
+fn async_receive(
+    active: Arc<AtomicBool>,
+    needs_stop: Arc<AtomicBool>,
+    file: PathBuf,
+    iq_file_type: IQFileType,
+) {
+    log::info!("start_receiving");
+
+    active.store(true, Ordering::SeqCst);
+
+    let mut receiver = Receiver::new(
+        false,
+        "",
+        &file,
+        &iq_file_type,
+        2046000.0,
+        0.0,
+        0,
+        "L1CA",
+        "",
+        needs_stop.clone(),
+    );
+
+    log::info!("run_loop");
+
+    receiver.run_loop(0);
+
+    active.store(false, Ordering::SeqCst);
+    log::info!("start_receiving: done");
 }
 
 impl GnssRcvApp {
@@ -35,16 +72,28 @@ impl GnssRcvApp {
 
     fn stop_async(&mut self) {
         self.needs_stop.store(true, Ordering::SeqCst);
-        info!("stop_async");
+        log::info!("stop_async");
     }
 
     fn start_async(&mut self) {
-        info!("start_async");
+        log::info!("start_async");
+        self.needs_stop.store(false, Ordering::SeqCst);
+
+        let active = self.active.clone();
+        let needs_stop = self.needs_stop.clone();
+        let iq_file = self.iq_file.clone();
+        let iq_file_type = self.iq_file_type.clone();
+
+        thread::spawn(move || {
+            log::info!("thread_start");
+            async_receive(active, needs_stop, iq_file.into(), iq_file_type);
+            log::info!("thread_stop");
+        });
     }
 }
 
 pub fn egui_main() {
-    info!("egui_main");
+    log::warn!("egui_main");
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([WIDTH as f32, HEIGHT as f32]),
         ..eframe::NativeOptions::default()
@@ -110,17 +159,19 @@ impl eframe::App for GnssRcvApp {
                             });
                     });
                     ui.end_row();
-                    let button_text = if self.active { "stop" } else { "start" };
+                    let button_text = if self.active.load(Ordering::SeqCst) {
+                        "stop"
+                    } else {
+                        "start"
+                    };
                     if ui
                         .add_sized([80.0, 25.], egui::Button::new(button_text.to_owned()))
                         .clicked()
                     {
-                        if self.active {
+                        if self.active.load(Ordering::SeqCst) {
                             self.stop_async();
-                            self.active = false;
                         } else {
                             self.start_async();
-                            self.active = true;
                         }
                     }
                 });

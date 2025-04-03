@@ -15,7 +15,7 @@ use gnss_rcv::receiver::Receiver;
 use gnss_rcv::recording::IQFileType;
 
 #[derive(StructOpt)]
-#[structopt(name = "gnss-rcv", about = "GNSS receiver")]
+#[structopt(name = "gnss-rcv", about = "gnss-rcv: GNSS receiver")]
 struct Options {
     #[structopt(
         short = "f",
@@ -95,8 +95,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         opt.num_msec,
     );
 
-    let sig = "L1CA";
-
     if opt.use_ui {
         gnss_rcv::egui_main();
         return Ok(());
@@ -110,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         opt.fs,
         opt.fi,
         opt.off_msec,
-        sig,
+        "L1CA",
         &opt.sats,
         exit_req.clone(),
     );

@@ -27,7 +27,7 @@ $ brew install librtlsdr
 
 ## Run with IQ recording of L1 signal sampled at 2046MHz
 ```
-$ RUST_LOG=warn cargo run --release -- -f path/to/recording.bin
+$ RUST_LOG=info cargo run --release -- -f path/to/recording.bin
 ```
 Note that the app supports multiple IQ file formats: i8, 2xf16, 2xf32, etc. This can be specified via the cmd-line option -t.
 
