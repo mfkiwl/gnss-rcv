@@ -1,12 +1,18 @@
 use colored::Colorize;
+use gnss_rs::constellation::Constellation;
 use gnss_rs::sv::SV;
 use rayon::prelude::*;
 use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::channel::Channel;
+use crate::device::RtlSdrDevice;
+use crate::network::RtlSdrTcp;
+use crate::recording::IQFileType;
+use crate::recording::IQRecording;
 use crate::solver::PositionSolver;
 
 const PERIOD_RCV: f64 = 0.001;
@@ -22,23 +28,98 @@ pub struct Receiver {
     channels: HashMap<SV, Channel>,
     solver: PositionSolver,
     last_fix_sec: f64,
+    exit_req: Arc<AtomicBool>,
+}
+
+fn get_sat_list(sats: &str) -> Vec<SV> {
+    let mut sat_vec = vec![];
+    if !sats.is_empty() {
+        for s in sats.split(',') {
+            let prn = s.parse::<u8>().unwrap();
+            sat_vec.push(SV::new(Constellation::GPS, prn));
+        }
+    } else {
+        for prn in 1..=32_u8 {
+            sat_vec.push(SV::new(Constellation::GPS, prn));
+        }
+        let use_sbas = false;
+        if use_sbas {
+            for prn in 120..=158_u8 {
+                sat_vec.push(SV::new(Constellation::GPS, prn));
+            }
+        }
+    }
+    sat_vec
+}
+
+fn get_reader_fn(
+    use_device: bool,
+    hostname: &str,
+    sig: &str,
+    fs: f64,
+    file: &Path,
+    iq_file_type: &IQFileType,
+    exit_req: Arc<AtomicBool>,
+) -> Option<Box<ReadIQFn>> {
+    if use_device {
+        let res = RtlSdrDevice::new(sig, fs);
+        if res.is_err() {
+            log::warn!("Failed to open rtl-sdr device.");
+            return None;
+        }
+        let mut dev = res.unwrap();
+
+        Some(Box::new(move |_off_samples, num_samples| {
+            dev.read_iq_data(num_samples)
+        }))
+    } else if !hostname.is_empty() {
+        let mut net = RtlSdrTcp::new(hostname, exit_req.clone(), sig, fs).unwrap();
+
+        log::warn!("Using rtl_tcp backend: {}", hostname);
+        Some(Box::new(move |_off_samples, num_samples| {
+            net.read_iq_data(num_samples)
+        }))
+    } else {
+        let mut recording = IQRecording::new(file, fs, iq_file_type);
+
+        Some(Box::new(move |off_samples, num_samples| {
+            recording.read_iq_file(off_samples, num_samples)
+        }))
+    }
 }
 
 impl Receiver {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
-        read_iq_fn: Box<ReadIQFn>,
+        use_device: bool,
+        hostname: &str,
+        file: &Path,
+        iq_file_type: &IQFileType,
         fs: f64,
         fi: f64,
         off_msec: usize,
         sig: &str,
-        sat_vec: &[SV],
+        sats: &str,
+        exit_req: Arc<AtomicBool>,
     ) -> Self {
         let period_sp = (PERIOD_RCV * fs) as usize;
         let mut channels = HashMap::<SV, Channel>::new();
+        let sat_vec = get_sat_list(sats);
 
         for sv in sat_vec {
-            channels.insert(*sv, Channel::new(sig, *sv, fs, fi));
+            channels.insert(sv, Channel::new(sig, sv, fs, fi));
         }
+
+        let read_iq_fn = get_reader_fn(
+            use_device,
+            hostname,
+            sig,
+            fs,
+            file,
+            iq_file_type,
+            exit_req.clone(),
+        )
+        .unwrap();
 
         Self {
             read_iq_fn,
@@ -49,6 +130,7 @@ impl Receiver {
             channels,
             solver: PositionSolver::new(),
             last_fix_sec: 0.0,
+            exit_req: exit_req.clone(),
         }
     }
 
@@ -119,13 +201,13 @@ impl Receiver {
         Ok(())
     }
 
-    pub fn run_loop(&mut self, num_msec: usize, exit_req: Arc<AtomicBool>) {
+    pub fn run_loop(&mut self, num_msec: usize) {
         let mut n = 0;
         loop {
             if self.process_step().is_err() {
                 break;
             }
-            if exit_req.load(Ordering::SeqCst) {
+            if self.exit_req.load(Ordering::SeqCst) {
                 break;
             }
             n += 1;

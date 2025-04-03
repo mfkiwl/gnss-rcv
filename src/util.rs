@@ -123,7 +123,7 @@ pub fn getbits2(buf: &[u8], p1: usize, l1: usize, p2: usize, l2: usize) -> i32 {
 pub fn hex_str(data: &[u8]) -> String {
     let num_bits = data.len();
     let mut s = String::new();
-    let num = (num_bits + 7) / 8;
+    let num = num_bits.div_ceil(8);
     for v in data.iter().take(num) {
         let n = format!("{:02x}", *v);
         s.push_str(&n);

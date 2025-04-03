@@ -1,11 +1,6 @@
 use chrono::Local;
 use colored::Colorize;
 use coredump::register_panic_handler;
-use gnss_rcv::device::RtlSdrDevice;
-use gnss_rcv::network::RtlSdrTcp;
-use gnss_rcv::plots::plot_remove_old_graph;
-use gnss_rs::constellation::Constellation;
-use gnss_rs::sv::SV;
 use log::LevelFilter;
 use std::fs::File;
 use std::io::Write;
@@ -15,17 +10,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use structopt::StructOpt;
 
-use gnss_rcv::code::Code;
-use gnss_rcv::receiver::ReadIQFn;
+use gnss_rcv::plots::plot_remove_old_graph;
 use gnss_rcv::receiver::Receiver;
 use gnss_rcv::recording::IQFileType;
-use gnss_rcv::recording::IQRecording;
 
 #[derive(StructOpt)]
 #[structopt(name = "gnss-rcv", about = "GNSS receiver")]
 struct Options {
-    #[structopt(long, help = "print gold codes")]
-    print_gold_code: bool,
     #[structopt(
         short = "f",
         long,
@@ -88,63 +79,9 @@ fn init_ctrl_c(exit_req: Arc<AtomicBool>) {
     .expect("Error setting Ctrl-C handler");
 }
 
-fn get_sat_list(opt: &Options) -> Vec<SV> {
-    let mut sat_vec = vec![];
-    if !opt.sats.is_empty() {
-        for s in opt.sats.split(',') {
-            let prn = s.parse::<u8>().unwrap();
-            sat_vec.push(SV::new(Constellation::GPS, prn));
-        }
-    } else {
-        for prn in 1..=32_u8 {
-            sat_vec.push(SV::new(Constellation::GPS, prn));
-        }
-        let use_sbas = false;
-        if use_sbas {
-            for prn in 120..=158_u8 {
-                sat_vec.push(SV::new(Constellation::GPS, prn));
-            }
-        }
-    }
-    sat_vec
-}
-
-fn get_reader_fn(opt: &Options, sig: &str, exit_req: Arc<AtomicBool>) -> Option<Box<ReadIQFn>> {
-    if opt.use_device {
-        let res = RtlSdrDevice::new(sig, opt.fs);
-        if res.is_err() {
-            log::warn!("Failed to open rtl-sdr device.");
-            return None;
-        }
-        let mut dev = res.unwrap();
-
-        Some(Box::new(move |_off_samples, num_samples| {
-            dev.read_iq_data(num_samples)
-        }))
-    } else if !opt.hostname.is_empty() {
-        let mut net = RtlSdrTcp::new(&opt.hostname, exit_req.clone(), sig, opt.fs).unwrap();
-
-        log::warn!("Using rtl_tcp backend: {}", opt.hostname);
-        Some(Box::new(move |_off_samples, num_samples| {
-            net.read_iq_data(num_samples)
-        }))
-    } else {
-        let mut recording = IQRecording::new(&opt.file, opt.fs, &opt.iq_file_type);
-
-        Some(Box::new(move |off_samples, num_samples| {
-            recording.read_iq_file(off_samples, num_samples)
-        }))
-    }
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Options::from_args();
     let exit_req = Arc::new(AtomicBool::new(false));
-
-    if opt.print_gold_code {
-        Code::print_l1ca_codes();
-        return Ok(());
-    }
 
     init_logging(&opt.log_file);
     init_ctrl_c(exit_req.clone());
@@ -158,7 +95,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         opt.num_msec,
     );
 
-    let sat_vec = get_sat_list(&opt);
     let sig = "L1CA";
 
     if opt.use_ui {
@@ -166,23 +102,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let read_fn = get_reader_fn(&opt, sig, exit_req.clone());
-    if read_fn.is_none() {
-        return Ok(());
-    }
-
     let mut receiver = Receiver::new(
-        read_fn.unwrap(),
+        opt.use_device,
+        &opt.hostname,
+        &opt.file,
+        &opt.iq_file_type,
         opt.fs,
         opt.fi,
         opt.off_msec,
         sig,
-        &sat_vec,
+        &opt.sats,
+        exit_req.clone(),
     );
 
     let ts = Instant::now();
 
-    receiver.run_loop(opt.num_msec, exit_req.clone());
+    receiver.run_loop(opt.num_msec);
 
     println!("GNSS terminating: {:.2} sec", ts.elapsed().as_secs_f32());
     exit_req.store(true, Ordering::SeqCst);
