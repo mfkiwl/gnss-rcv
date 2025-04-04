@@ -2,12 +2,18 @@ use egui_extras::{Column, TableBuilder};
 use egui_extras::{Size, StripBuilder};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::thread;
 
+use gnss_rs::constellation::Constellation;
+use gnss_rs::sv::SV;
+
+use crate::channel::State;
 use crate::receiver::Receiver;
 use crate::recording::IQFileType;
+use crate::state::GnssState;
 
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
@@ -19,6 +25,7 @@ pub struct GnssRcvApp {
     iq_type_choice: usize,
     needs_stop: Arc<AtomicBool>,
     active: Arc<AtomicBool>,
+    pub_state: Arc<Mutex<GnssState>>,
 }
 
 impl Default for GnssRcvApp {
@@ -30,6 +37,7 @@ impl Default for GnssRcvApp {
             iq_type_choice: 0,
             active: Arc::new(AtomicBool::new(false)),
             needs_stop: Arc::new(AtomicBool::new(false)),
+            pub_state: Arc::new(Mutex::new(GnssState::default())),
         }
     }
 }
@@ -39,6 +47,7 @@ fn async_receive(
     needs_stop: Arc<AtomicBool>,
     file: PathBuf,
     iq_file_type: IQFileType,
+    pub_state: Arc<Mutex<GnssState>>,
 ) {
     log::info!("start_receiving");
 
@@ -55,6 +64,7 @@ fn async_receive(
         "L1CA",
         "",
         needs_stop.clone(),
+        pub_state,
     );
 
     log::info!("run_loop");
@@ -83,10 +93,11 @@ impl GnssRcvApp {
         let needs_stop = self.needs_stop.clone();
         let iq_file = self.iq_file.clone();
         let iq_file_type = self.iq_file_type.clone();
+        let pub_state = self.pub_state.clone();
 
         thread::spawn(move || {
             log::info!("thread_start");
-            async_receive(active, needs_stop, iq_file.into(), iq_file_type);
+            async_receive(active, needs_stop, iq_file.into(), iq_file_type, pub_state);
             log::info!("thread_stop");
         });
     }
@@ -226,7 +237,7 @@ impl GnssRcvApp {
                     ui.strong("dB-Hz");
                 });
                 header.col(|ui| {
-                    ui.strong("ephemeris");
+                    ui.strong("state");
                 });
                 header.col(|ui| {
                     ui.strong("almanac");
@@ -238,21 +249,34 @@ impl GnssRcvApp {
             .body(|mut body| {
                 for row_index in 0..32 {
                     let row_height = 20.0;
+                    let sv = SV::new(Constellation::GPS, row_index);
+                    let pub_state = self.pub_state.lock().unwrap();
+                    let channel = pub_state.channels.get(&sv);
+
+                    if channel.is_none() {
+                        continue;
+                    }
+                    let state = channel.unwrap().state.clone();
+                    if state != State::Tracking {
+                        continue;
+                    }
+                    let cn0 = channel.unwrap().cn0;
+
                     body.row(row_height, |mut row| {
                         row.col(|ui| {
                             ui.label(format!("sv-{}", row_index).to_string());
                         });
                         row.col(|ui| {
-                            ui.label(format!("11"));
+                            ui.label(format!("{:.1}", cn0).to_string());
                         });
                         row.col(|ui| {
-                            ui.label(format!("xyz"));
+                            ui.label("TRK");
                         });
                         row.col(|ui| {
                             ui.label(".-_-_-.");
                         });
                         row.col(|ui| {
-                            ui.label(format!("oOoOo"));
+                            ui.label("oOoOo");
                         });
                     });
                 }

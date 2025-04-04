@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use structopt::StructOpt;
@@ -13,6 +14,7 @@ use structopt::StructOpt;
 use gnss_rcv::plots::plot_remove_old_graph;
 use gnss_rcv::receiver::Receiver;
 use gnss_rcv::recording::IQFileType;
+use gnss_rcv::state::GnssState;
 
 #[derive(StructOpt)]
 #[structopt(name = "gnss-rcv", about = "gnss-rcv: GNSS receiver")]
@@ -111,6 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "L1CA",
         &opt.sats,
         exit_req.clone(),
+        Arc::new(Mutex::new(GnssState::default())),
     );
 
     let ts = Instant::now();

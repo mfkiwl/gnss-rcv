@@ -11,6 +11,7 @@ pub mod plots;
 pub mod receiver;
 pub mod recording;
 pub mod solver;
+pub mod state;
 pub mod util;
 
 pub use app::egui_main;

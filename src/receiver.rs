@@ -6,6 +6,7 @@ use rustfft::num_complex::Complex64;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::channel::Channel;
@@ -14,6 +15,7 @@ use crate::network::RtlSdrTcp;
 use crate::recording::IQFileType;
 use crate::recording::IQRecording;
 use crate::solver::PositionSolver;
+use crate::state::GnssState;
 
 const PERIOD_RCV: f64 = 0.001;
 
@@ -101,13 +103,15 @@ impl Receiver {
         sig: &str,
         sats: &str,
         exit_req: Arc<AtomicBool>,
+        state: Arc<Mutex<GnssState>>,
     ) -> Self {
         let period_sp = (PERIOD_RCV * fs) as usize;
         let mut channels = HashMap::<SV, Channel>::new();
         let sat_vec = get_sat_list(sats);
 
         for sv in sat_vec {
-            channels.insert(sv, Channel::new(sig, sv, fs, fi));
+            let pub_state = state.clone();
+            channels.insert(sv, Channel::new(sig, sv, fs, fi, pub_state));
         }
 
         let read_iq_fn = get_reader_fn(

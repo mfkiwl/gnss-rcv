@@ -3,6 +3,8 @@ use gnss_rs::sv::SV;
 use plotters::prelude::*;
 use rustfft::FftPlanner;
 use rustfft::num_complex::Complex64;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 const PI: f64 = std::f64::consts::PI;
 
@@ -11,6 +13,8 @@ use crate::navigation::Navigation;
 use crate::plots::plot_iq_scatter;
 use crate::plots::plot_time_graph;
 use crate::plots::plot_time_graph_with_sz;
+use crate::state::ChannelState;
+use crate::state::GnssState;
 use crate::util::calc_correlation;
 use crate::util::doppler_shift;
 use crate::util::get_max_with_idx;
@@ -33,8 +37,8 @@ const HISTORY_NUM: usize = 20000;
 const CN0_THRESHOLD_LOCKED: f64 = 35.0;
 const CN0_THRESHOLD_LOST: f64 = 29.0;
 
-#[derive(PartialEq, Debug)]
-enum State {
+#[derive(PartialEq, Debug, Clone)]
+pub enum State {
     Tracking,
     Acquisition,
     Idle,
@@ -93,6 +97,7 @@ pub struct Acquisition {
 }
 
 pub struct Channel {
+    pub_state: Arc<Mutex<GnssState>>,
     pub sv: SV,
     fc: f64, // carrier frequency
     fs: f64, // sampling frequency
@@ -139,7 +144,31 @@ impl Channel {
             && self.nav.eph.a >= 20_000_000.0
     }
 
-    pub fn new(sig: &str, sv: SV, fs: f64, fi: f64) -> Self {
+    fn set_state(&mut self, state: State) {
+        self.pub_state
+            .lock()
+            .unwrap()
+            .channels
+            .get_mut(&self.sv)
+            .unwrap()
+            .state = state.clone();
+
+        self.state = state;
+    }
+
+    fn set_cn0(&mut self, cn0: f64) {
+        self.pub_state
+            .lock()
+            .unwrap()
+            .channels
+            .get_mut(&self.sv)
+            .unwrap()
+            .cn0 = cn0;
+
+        self.trk.cn0 = cn0;
+    }
+
+    pub fn new(sig: &str, sv: SV, fs: f64, fi: f64, pub_state: Arc<Mutex<GnssState>>) -> Self {
         let code_buf = Code::gen_code(sig, sv.prn).unwrap();
         let code_sec = Code::get_code_period(sig);
         let code_len = Code::get_code_len(sig);
@@ -157,7 +186,14 @@ impl Channel {
         let fft_fw = fft_planner.plan_fft_forward(prn_code_fft.len());
         fft_fw.process(&mut prn_code_fft);
 
+        pub_state
+            .lock()
+            .unwrap()
+            .channels
+            .insert(sv, ChannelState::default());
+
         Self {
+            pub_state,
             sv,
             fft_planner,
             ts_sec: 0.0,
@@ -203,7 +239,8 @@ impl Channel {
                 self.ts_sec,
             );
         }
-        self.state = State::Idle;
+
+        self.set_state(State::Idle);
         self.num_idl_samples = 0;
         self.num_trk_samples = 0;
         self.num_acq_samples = 0;
@@ -225,7 +262,7 @@ impl Channel {
 
     fn acquisition_start(&mut self) {
         self.acquisition_init();
-        self.state = State::Acquisition;
+        self.set_state(State::Acquisition);
     }
 
     fn tracking_init(&mut self) {
@@ -259,11 +296,11 @@ impl Channel {
             self.ts_sec,
         );
         self.tracking_init();
-        self.state = State::Tracking;
+        self.set_state(State::Tracking);
 
         self.trk.code_off_sec = code_off_sec;
         self.trk.doppler_hz = doppler_hz;
-        self.trk.cn0 = cn0;
+        self.set_cn0(cn0);
     }
 
     fn acquisition_integrate_correlation(
