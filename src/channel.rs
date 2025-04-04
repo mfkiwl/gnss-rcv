@@ -145,6 +145,16 @@ impl Channel {
     }
 
     fn set_state(&mut self, state: State) {
+        let old_state = self
+            .pub_state
+            .lock()
+            .unwrap()
+            .channels
+            .get_mut(&self.sv)
+            .unwrap()
+            .state
+            .clone();
+
         self.pub_state
             .lock()
             .unwrap()
@@ -153,19 +163,24 @@ impl Channel {
             .unwrap()
             .state = state.clone();
 
+        if state == State::Tracking && old_state == State::Idle
+            || state == State::Idle && old_state == State::Tracking
+        {
+            (self.pub_state.lock().unwrap().update_func.func)();
+        }
+
         self.state = state;
     }
 
-    fn set_cn0(&mut self, cn0: f64) {
-        self.pub_state
-            .lock()
-            .unwrap()
-            .channels
-            .get_mut(&self.sv)
-            .unwrap()
-            .cn0 = cn0;
-
-        self.trk.cn0 = cn0;
+    fn cn0_updated(&mut self) {
+        let need_update = {
+            let mut st = self.pub_state.lock().unwrap();
+            st.channels.get_mut(&self.sv).unwrap().cn0 = self.trk.cn0;
+            st.channels.get(&self.sv).unwrap().state == State::Tracking
+        };
+        if need_update {
+            (self.pub_state.lock().unwrap().update_func.func)();
+        }
     }
 
     pub fn new(sig: &str, sv: SV, fs: f64, fi: f64, pub_state: Arc<Mutex<GnssState>>) -> Self {
@@ -300,7 +315,8 @@ impl Channel {
 
         self.trk.code_off_sec = code_off_sec;
         self.trk.doppler_hz = doppler_hz;
-        self.set_cn0(cn0);
+        self.trk.cn0 = cn0;
+        self.cn0_updated();
     }
 
     fn acquisition_integrate_correlation(
@@ -548,6 +564,7 @@ impl Channel {
                 let cn0 =
                     10.0 * (self.trk.sum_corr_p / self.trk.sum_corr_n / self.code_sec).log10();
                 self.trk.cn0 += 0.5 * (cn0 - self.trk.cn0);
+                self.cn0_updated();
             }
             self.trk.sum_corr_n = 0.0;
             self.trk.sum_corr_p = 0.0;

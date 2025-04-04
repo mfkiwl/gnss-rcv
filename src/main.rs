@@ -113,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "L1CA",
         &opt.sats,
         exit_req.clone(),
-        Arc::new(Mutex::new(GnssState::default())),
+        Arc::new(Mutex::new(GnssState::new())),
     );
 
     let ts = Instant::now();

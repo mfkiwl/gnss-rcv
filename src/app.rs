@@ -37,7 +37,7 @@ impl Default for GnssRcvApp {
             iq_type_choice: 0,
             active: Arc::new(AtomicBool::new(false)),
             needs_stop: Arc::new(AtomicBool::new(false)),
-            pub_state: Arc::new(Mutex::new(GnssState::default())),
+            pub_state: Arc::new(Mutex::new(GnssState::new())),
         }
     }
 }
@@ -85,7 +85,7 @@ impl GnssRcvApp {
         log::info!("stop_async");
     }
 
-    fn start_async(&mut self) {
+    fn start_async(&mut self, ctx: &egui::Context) {
         log::info!("start_async");
         self.needs_stop.store(false, Ordering::SeqCst);
 
@@ -94,6 +94,17 @@ impl GnssRcvApp {
         let iq_file = self.iq_file.clone();
         let iq_file_type = self.iq_file_type.clone();
         let pub_state = self.pub_state.clone();
+        let ctx_clone = ctx.clone();
+
+        let update_func = move || {
+            ctx_clone.request_repaint();
+            log::info!("repaint requested");
+        };
+
+        self.pub_state
+            .lock()
+            .unwrap()
+            .set_update_func(Box::new(update_func.clone()));
 
         thread::spawn(move || {
             log::info!("thread_start");
@@ -182,7 +193,7 @@ impl eframe::App for GnssRcvApp {
                         if self.active.load(Ordering::SeqCst) {
                             self.stop_async();
                         } else {
-                            self.start_async();
+                            self.start_async(ctx);
                         }
                     }
                 });
@@ -247,7 +258,7 @@ impl GnssRcvApp {
                 });
             })
             .body(|mut body| {
-                for row_index in 0..32 {
+                for row_index in 1..=32 {
                     let row_height = 20.0;
                     let sv = SV::new(Constellation::GPS, row_index);
                     let pub_state = self.pub_state.lock().unwrap();
