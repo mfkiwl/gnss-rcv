@@ -15,12 +15,13 @@ use crate::receiver::Receiver;
 use crate::recording::IQFileType;
 use crate::state::GnssState;
 
+const PI: f64 = std::f64::consts::PI;
+
 const WIDTH: usize = 800;
 const HEIGHT: usize = 600;
 
 pub struct GnssRcvApp {
     iq_file: String,
-    iq_file_type: IQFileType,
     iq_file_choice: usize,
     iq_type_choice: usize,
     needs_stop: Arc<AtomicBool>,
@@ -32,7 +33,6 @@ impl Default for GnssRcvApp {
     fn default() -> Self {
         Self {
             iq_file: "resources/nov_3_time_18_48_st_ives".to_owned(),
-            iq_file_type: IQFileType::TypePairFloat32,
             iq_file_choice: 0,
             iq_type_choice: 0,
             active: Arc::new(AtomicBool::new(false)),
@@ -92,12 +92,16 @@ impl GnssRcvApp {
         let active = self.active.clone();
         let needs_stop = self.needs_stop.clone();
         let iq_file = self.iq_file.clone();
-        let iq_file_type = self.iq_file_type.clone();
         let pub_state = self.pub_state.clone();
         let ctx_clone = ctx.clone();
+        let iq_file_type = if self.iq_file_choice == 0 {
+            IQFileType::TypePairFloat32
+        } else {
+            IQFileType::TypePairInt16
+        };
 
         let update_func = move || {
-            ctx_clone.request_repaint();
+            ctx_clone.request_repaint_after_secs(0.05);
             log::info!("repaint requested");
         };
 
@@ -234,7 +238,8 @@ impl GnssRcvApp {
             .column(Column::auto())
             .column(Column::auto().at_least(30.0).resizable(true))
             .column(Column::auto())
-            .column(Column::remainder())
+            .column(Column::auto())
+            .column(Column::auto())
             .column(Column::remainder())
             .min_scrolled_height(0.0)
             .max_scroll_height(available_height);
@@ -248,13 +253,16 @@ impl GnssRcvApp {
                     ui.strong("dB-Hz");
                 });
                 header.col(|ui| {
-                    ui.strong("state");
+                    ui.strong("doppler");
                 });
                 header.col(|ui| {
-                    ui.strong("almanac");
+                    ui.strong("code_idx");
                 });
                 header.col(|ui| {
-                    ui.strong("detail-2");
+                    ui.strong("phi");
+                });
+                header.col(|ui| {
+                    ui.strong("other");
                 });
             })
             .body(|mut body| {
@@ -272,6 +280,9 @@ impl GnssRcvApp {
                         continue;
                     }
                     let cn0 = channel.unwrap().cn0;
+                    let phi = (channel.unwrap().phi % 1.0) * 2.0 * PI;
+                    let doppler_hz = channel.unwrap().doppler_hz;
+                    let code_idx = channel.unwrap().code_idx;
 
                     body.row(row_height, |mut row| {
                         row.col(|ui| {
@@ -281,13 +292,16 @@ impl GnssRcvApp {
                             ui.label(format!("{:.1}", cn0).to_string());
                         });
                         row.col(|ui| {
-                            ui.label("TRK");
+                            ui.label(format!("{:.0}", doppler_hz).to_string());
                         });
                         row.col(|ui| {
-                            ui.label(".-_-_-.");
+                            ui.label(format!("{:4.0}", code_idx).to_string());
                         });
                         row.col(|ui| {
-                            ui.label("oOoOo");
+                            ui.label(format!("{:.2}", phi).to_string());
+                        });
+                        row.col(|ui| {
+                            ui.label("".to_string());
                         });
                     });
                 }

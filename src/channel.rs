@@ -172,7 +172,77 @@ impl Channel {
         self.state = state;
     }
 
-    fn cn0_updated(&mut self) {
+    fn update_state_phi(&mut self) {
+        let state = self
+            .pub_state
+            .lock()
+            .unwrap()
+            .channels
+            .get_mut(&self.sv)
+            .unwrap()
+            .state
+            .clone();
+
+        self.pub_state
+            .lock()
+            .unwrap()
+            .channels
+            .get_mut(&self.sv)
+            .unwrap()
+            .phi = self.trk.phi;
+
+        if state == State::Tracking {
+            (self.pub_state.lock().unwrap().update_func.func)();
+        }
+    }
+
+    fn update_state_code_idx(&mut self) {
+        let state = self
+            .pub_state
+            .lock()
+            .unwrap()
+            .channels
+            .get_mut(&self.sv)
+            .unwrap()
+            .state
+            .clone();
+
+        self.pub_state
+            .lock()
+            .unwrap()
+            .channels
+            .get_mut(&self.sv)
+            .unwrap()
+            .code_idx = *self.hist.code_phase_offset.last().unwrap();
+
+        if state == State::Tracking {
+            (self.pub_state.lock().unwrap().update_func.func)();
+        }
+    }
+    fn update_state_doppler_hz(&mut self) {
+        let state = self
+            .pub_state
+            .lock()
+            .unwrap()
+            .channels
+            .get_mut(&self.sv)
+            .unwrap()
+            .state
+            .clone();
+
+        self.pub_state
+            .lock()
+            .unwrap()
+            .channels
+            .get_mut(&self.sv)
+            .unwrap()
+            .doppler_hz = self.trk.doppler_hz;
+
+        if state == State::Tracking {
+            (self.pub_state.lock().unwrap().update_func.func)();
+        }
+    }
+    fn update_state_cn0(&mut self) {
         let need_update = {
             let mut st = self.pub_state.lock().unwrap();
             st.channels.get_mut(&self.sv).unwrap().cn0 = self.trk.cn0;
@@ -315,8 +385,9 @@ impl Channel {
 
         self.trk.code_off_sec = code_off_sec;
         self.trk.doppler_hz = doppler_hz;
+        self.update_state_doppler_hz();
         self.trk.cn0 = cn0;
-        self.cn0_updated();
+        self.update_state_cn0();
     }
 
     fn acquisition_integrate_correlation(
@@ -526,6 +597,7 @@ impl Channel {
         let err_freq = (cross / dot).atan() / 2.0 / PI;
 
         self.trk.doppler_hz -= b / 0.25 * err_freq;
+        self.update_state_doppler_hz();
     }
 
     fn run_pll(&mut self, c_p: Complex64) {
@@ -536,6 +608,7 @@ impl Channel {
         let w = B_PLL / 0.53; // ~18.9
         self.trk.doppler_hz +=
             1.4 * w * (err_phase - self.trk.err_phase) + w * w * err_phase * self.code_sec;
+        self.update_state_doppler_hz();
         self.trk.err_phase = err_phase;
         self.hist.phi_error.push(err_phase * 2.0 * PI);
     }
@@ -564,7 +637,7 @@ impl Channel {
                 let cn0 =
                     10.0 * (self.trk.sum_corr_p / self.trk.sum_corr_n / self.code_sec).log10();
                 self.trk.cn0 += 0.5 * (cn0 - self.trk.cn0);
-                self.cn0_updated();
+                self.update_state_cn0();
             }
             self.trk.sum_corr_n = 0.0;
             self.trk.sum_corr_p = 0.0;
@@ -596,8 +669,10 @@ impl Channel {
         // code offset in samples
         let code_off = self.trk.code_off_sec * self.fs;
         self.trk.phi = self.fi * tau + self.trk.adr + fc * code_off / self.fs;
+        self.update_state_phi();
 
         self.hist.code_phase_offset.push(code_off);
+        self.update_state_code_idx();
     }
 
     fn log_periodically(&mut self) {

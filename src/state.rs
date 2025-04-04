@@ -9,12 +9,18 @@ pub struct UpdateFunc {
 pub struct ChannelState {
     pub state: State,
     pub cn0: f64,
+    pub doppler_hz: f64,
+    pub code_idx: f64,
+    pub phi: f64,
 }
 impl Default for ChannelState {
     fn default() -> Self {
         Self {
             state: State::Acquisition,
             cn0: 0.0,
+            doppler_hz: 0.0,
+            code_idx: 0.0,
+            phi: 0.0,
         }
     }
 }
