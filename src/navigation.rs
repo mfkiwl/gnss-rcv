@@ -29,8 +29,8 @@ enum SyncState {
     None,
 }
 
-#[derive(Default)]
 pub struct Navigation {
+    // pub_state: Arc<Mutex<GnssState>>,
     bit_sync: usize, // beginning of a navigation bit in num_trk_samples
     nav_sync: usize, // beginning/end of a navigation frame in num_trk_samples
     sync_state: SyncState,
@@ -42,10 +42,13 @@ pub struct Navigation {
 impl Navigation {
     pub fn new(sv: SV) -> Self {
         Self {
+            //       pub_state,
+            bit_sync: 0,
+            nav_sync: 0,
             sync_state: SyncState::Normal,
             bits: vec![0; SDR_MAX_NSYM],
+            count_parity_err: 0,
             eph: Ephemeris::new(sv),
-            ..Default::default()
         }
     }
 
@@ -257,6 +260,12 @@ impl Channel {
         );
     }
 
+    fn update_gpst_time(&mut self, tow_gpst: Epoch) {
+        self.pub_state.lock().unwrap().tow_gpst = tow_gpst;
+
+        (self.pub_state.lock().unwrap().update_func.func)();
+    }
+
     fn nav_decode_lnav_subframe(&mut self, buf: &[u8]) -> u32 {
         let preamble = getbitu(buf, 0, 8);
         assert_eq!(preamble, 0x8b);
@@ -292,6 +301,8 @@ impl Channel {
                 self.nav.eph.tgd,
                 self.nav.eph.toe_gpst
             );
+
+            self.update_gpst_time(self.nav.eph.tow_gpst);
         }
 
         subframe_id

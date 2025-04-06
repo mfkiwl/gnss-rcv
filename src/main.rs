@@ -27,6 +27,8 @@ struct Options {
     file: PathBuf,
     #[structopt(short = "s", long, help = "host for rtl-sdr-tcp", default_value = "")]
     hostname: String,
+    #[structopt(long, help = "signal: L1CA, etc.", default_value = "L1CA")]
+    sig: String,
     #[structopt(short = "d", long, help = "use rtl-sdr device")]
     use_device: bool,
     #[structopt(short = "l", long, help = "path to log file", default_value = "")]
@@ -110,7 +112,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         opt.fs,
         opt.fi,
         opt.off_msec,
-        "L1CA",
+        &opt.sig,
         &opt.sats,
         exit_req.clone(),
         Arc::new(Mutex::new(GnssState::new())),

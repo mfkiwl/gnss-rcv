@@ -97,7 +97,7 @@ pub struct Acquisition {
 }
 
 pub struct Channel {
-    pub_state: Arc<Mutex<GnssState>>,
+    pub pub_state: Arc<Mutex<GnssState>>,
     pub sv: SV,
     fc: f64, // carrier frequency
     fs: f64, // sampling frequency
@@ -137,7 +137,7 @@ impl Channel {
     }
 
     pub fn is_ephemeris_complete(&self) -> bool {
-        self.get_cn0() >= 35.0
+        self.get_cn0() >= CN0_THRESHOLD_LOCKED
             && self.nav.eph.ts_sec != 0.0
             && self.nav.eph.week != 0
             && self.nav.eph.toe != 0
@@ -278,7 +278,7 @@ impl Channel {
             .insert(sv, ChannelState::default());
 
         Self {
-            pub_state,
+            pub_state: pub_state.clone(),
             sv,
             fft_planner,
             ts_sec: 0.0,

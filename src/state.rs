@@ -1,5 +1,6 @@
 use crate::channel::State;
 use gnss_rs::sv::SV;
+use gnss_rtk::prelude::Epoch;
 use std::collections::HashMap;
 
 pub struct UpdateFunc {
@@ -26,6 +27,7 @@ impl Default for ChannelState {
 }
 
 pub struct GnssState {
+    pub tow_gpst: Epoch,
     pub channels: HashMap<SV, ChannelState>,
     pub update_func: UpdateFunc,
 }
@@ -33,6 +35,7 @@ pub struct GnssState {
 impl GnssState {
     pub fn new() -> Self {
         Self {
+            tow_gpst: Epoch::default(),
             channels: HashMap::<SV, ChannelState>::new(),
             update_func: UpdateFunc {
                 func: Box::new(|| {}),

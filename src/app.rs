@@ -24,6 +24,7 @@ pub struct GnssRcvApp {
     iq_file: String,
     iq_file_choice: usize,
     iq_type_choice: usize,
+    sig_choice: usize,
     needs_stop: Arc<AtomicBool>,
     active: Arc<AtomicBool>,
     pub_state: Arc<Mutex<GnssState>>,
@@ -35,6 +36,7 @@ impl Default for GnssRcvApp {
             iq_file: "resources/nov_3_time_18_48_st_ives".to_owned(),
             iq_file_choice: 0,
             iq_type_choice: 0,
+            sig_choice: 0,
             active: Arc::new(AtomicBool::new(false)),
             needs_stop: Arc::new(AtomicBool::new(false)),
             pub_state: Arc::new(Mutex::new(GnssState::new())),
@@ -47,6 +49,7 @@ fn async_receive(
     needs_stop: Arc<AtomicBool>,
     file: PathBuf,
     iq_file_type: IQFileType,
+    sig: &str,
     pub_state: Arc<Mutex<GnssState>>,
 ) {
     log::info!("start_receiving");
@@ -61,7 +64,7 @@ fn async_receive(
         2046000.0,
         0.0,
         0,
-        "L1CA",
+        sig,
         "",
         needs_stop.clone(),
         pub_state,
@@ -93,6 +96,7 @@ impl GnssRcvApp {
         let needs_stop = self.needs_stop.clone();
         let iq_file = self.iq_file.clone();
         let pub_state = self.pub_state.clone();
+        let sig = "L1CA";
         let ctx_clone = ctx.clone();
         let iq_file_type = if self.iq_file_choice == 0 {
             IQFileType::TypePairFloat32
@@ -112,7 +116,14 @@ impl GnssRcvApp {
 
         thread::spawn(move || {
             log::info!("thread_start");
-            async_receive(active, needs_stop, iq_file.into(), iq_file_type, pub_state);
+            async_receive(
+                active,
+                needs_stop,
+                iq_file.into(),
+                iq_file_type,
+                &sig,
+                pub_state,
+            );
             log::info!("thread_stop");
         });
     }
@@ -134,13 +145,70 @@ pub fn egui_main() {
 
 impl eframe::App for GnssRcvApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.update_top(ctx);
+        self.update_mid(ctx);
+        self.update_table(ctx);
+    }
+}
+
+impl GnssRcvApp {
+    fn update_iq_type(&mut self, ui: &mut egui::Ui) {
+        let type_str = ["2xf32", "2xi16"];
+        egui::ComboBox::from_label("iq-format")
+            .width(30.0)
+            .selected_text(type_str[self.iq_type_choice])
+            .show_ui(ui, |ui| {
+                for (i, s) in type_str.iter().enumerate() {
+                    let value = ui.selectable_value(&mut self.iq_type_choice, i, s.to_string());
+                    if value.clicked() {
+                        self.iq_type_choice = i;
+                    }
+                }
+            });
+    }
+    fn update_sig_type(&mut self, ui: &mut egui::Ui) {
+        let sig_str = ["L1CA"];
+
+        egui::ComboBox::from_label("signal")
+            .width(30.0)
+            .selected_text(sig_str[self.sig_choice])
+            .show_ui(ui, |ui| {
+                for (i, s) in sig_str.iter().enumerate() {
+                    let value = ui.selectable_value(&mut self.iq_type_choice, i, s.to_string());
+                    if value.clicked() {
+                        self.sig_choice = i;
+                    }
+                }
+            });
+    }
+    fn update_start_stop(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let button_text = if self.active.load(Ordering::SeqCst) {
+            "stop"
+        } else {
+            "start"
+        };
+        if ui
+            //  .add_sized([150.0, 25.], egui::Button::new(button_text.to_owned()))
+            .add_sized(
+                ui.available_size(),
+                egui::Button::new(button_text.to_owned()),
+            )
+            .clicked()
+        {
+            if self.active.load(Ordering::SeqCst) {
+                self.stop_async();
+            } else {
+                self.start_async(ctx);
+            }
+        }
+    }
+    fn update_top(&mut self, ctx: &egui::Context) {
         let vec_str = [
             "nov_3_time_18_48_st_ives",
             "gpssim_2xi16",
             "L1_20211202_084700_4MHz_IQ.bin",
             "GPS-L1-2022-03-27.sigmf-data",
         ];
-        let type_str = ["2xf32", "2xi16"];
 
         egui::TopBottomPanel::top("top_panel")
             .resizable(false)
@@ -168,50 +236,30 @@ impl eframe::App for GnssRcvApp {
                         );
                     });
                     ui.horizontal(|ui| {
-                        egui::ComboBox::from_label("type")
-                            .width(30.0)
-                            .selected_text(type_str[self.iq_type_choice])
-                            .show_ui(ui, |ui| {
-                                for (i, s) in type_str.iter().enumerate() {
-                                    let value = ui.selectable_value(
-                                        &mut self.iq_type_choice,
-                                        i,
-                                        s.to_string(),
-                                    );
-                                    if value.clicked() {
-                                        self.iq_type_choice = i;
-                                    }
-                                }
-                            });
+                        self.update_iq_type(ui);
+                    });
+                    ui.horizontal(|ui| {
+                        self.update_sig_type(ui);
                     });
                     ui.end_row();
-                    let button_text = if self.active.load(Ordering::SeqCst) {
-                        "stop"
-                    } else {
-                        "start"
-                    };
-                    if ui
-                        .add_sized([80.0, 25.], egui::Button::new(button_text.to_owned()))
-                        .clicked()
-                    {
-                        if self.active.load(Ordering::SeqCst) {
-                            self.stop_async();
-                        } else {
-                            self.start_async(ctx);
-                        }
-                    }
+                    self.update_start_stop(ui, ctx);
                 });
             });
+    }
 
-        egui::TopBottomPanel::bottom("bottom_panel")
+    fn update_mid(&mut self, ctx: &egui::Context) {
+        let pub_state = self.pub_state.lock().unwrap();
+        egui::TopBottomPanel::top("mid_panel")
             .resizable(true)
-            .min_height(150.0)
+            .min_height(50.0)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.heading("log file here");
+                    ui.monospace(format!("{:?}", pub_state.tow_gpst).to_string());
                 });
             });
+    }
 
+    fn update_table(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 StripBuilder::new(ui)
@@ -226,9 +274,6 @@ impl eframe::App for GnssRcvApp {
             });
         });
     }
-}
-
-impl GnssRcvApp {
     fn table_ui(&mut self, ui: &mut egui::Ui) {
         let available_height = ui.available_height();
         let table = TableBuilder::new(ui)
@@ -247,7 +292,7 @@ impl GnssRcvApp {
         table
             .header(20.0, |mut header| {
                 header.col(|ui| {
-                    ui.strong("PRN");
+                    ui.strong("SV");
                 });
                 header.col(|ui| {
                     ui.strong("dB-Hz");
@@ -286,7 +331,7 @@ impl GnssRcvApp {
 
                     body.row(row_height, |mut row| {
                         row.col(|ui| {
-                            ui.label(format!("sv-{}", row_index).to_string());
+                            ui.label(format!("{}", sv).to_string());
                         });
                         row.col(|ui| {
                             ui.label(format!("{:.1}", cn0).to_string());
