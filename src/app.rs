@@ -278,15 +278,20 @@ impl GnssRcvApp {
                         ui.end_row();
                     });
                     egui::Grid::new("MidGrid1").show(ui, |ui| {
-                        let s = if pub_state.longitude != 0.0 {
-                            format!(
+                        if pub_state.longitude != 0.0 {
+                            let s = format!(
                                 "lat/long/height: {},{},{}",
-                                pub_state.longitude, pub_state.latitude, pub_state.height
-                            )
+                                pub_state.latitude, pub_state.longitude, pub_state.height
+                            );
+                            let url = format!(
+                                "https://maps.google.com/?ll={},{}",
+                                pub_state.latitude, pub_state.longitude
+                            );
+                            ui.hyperlink_to(s, url.to_string());
                         } else {
-                            "no position fix".to_string()
+                            let s = "no position fix".to_string();
+                            ui.monospace(s);
                         };
-                        ui.monospace(s);
                     });
                 });
             });

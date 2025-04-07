@@ -31,6 +31,7 @@ pub struct Receiver {
     solver: PositionSolver,
     last_fix_sec: f64,
     exit_req: Arc<AtomicBool>,
+    pub_state: Arc<Mutex<GnssState>>,
 }
 
 fn get_sat_list(sats: &str) -> Vec<SV> {
@@ -135,6 +136,7 @@ impl Receiver {
             solver: PositionSolver::new(),
             last_fix_sec: 0.0,
             exit_req: exit_req.clone(),
+            pub_state: state.clone(),
         }
     }
 
@@ -190,7 +192,8 @@ impl Receiver {
             format!("attempting fix with {} SVs", ephs.len()).red()
         );
 
-        self.solver.compute_position(ts_sec, &ephs);
+        self.solver
+            .compute_position(self.pub_state.clone(), ts_sec, &ephs);
         self.last_fix_sec = ts_sec;
     }
 

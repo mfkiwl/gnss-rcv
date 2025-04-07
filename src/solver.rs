@@ -6,9 +6,9 @@ use gnss_rtk::prelude::{
 };
 use map_3d::{Ellipsoid, ecef2geodetic};
 use once_cell::sync::Lazy;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use crate::ephemeris::Ephemeris;
+use crate::{ephemeris::Ephemeris, state::GnssState};
 
 const SPEED_OF_LIGHT: f64 = 299_792_458.0;
 const EARTH_MU_GPS: f64 = 3.9860058e14; // earth gravitational constant
@@ -135,7 +135,12 @@ impl PositionSolver {
         Self { solver }
     }
 
-    pub fn compute_position(&mut self, ts_sec: f64, ephs: &Vec<Ephemeris>) {
+    pub fn compute_position(
+        &mut self,
+        pub_state: Arc<Mutex<GnssState>>,
+        ts_sec: f64,
+        ephs: &Vec<Ephemeris>,
+    ) {
         {
             let mut glob_ephs = SOLVER_EPHEMERIS.lock().unwrap();
             *glob_ephs = ephs.clone();
@@ -208,15 +213,17 @@ impl PositionSolver {
             Ok(solution) => {
                 let pos = solution.1.position;
                 let (lat_rad, lon_rad, h) = ecef2geodetic(pos[0], pos[1], pos[2], Ellipsoid::WGS84);
+                let lat = lat_rad * 180.0 / PI;
+                let lon = lon_rad * 180.0 / PI;
+                let height = h / 1000.0;
+
+                pub_state.lock().unwrap().latitude = lat;
+                pub_state.lock().unwrap().longitude = lon;
+                pub_state.lock().unwrap().height = height;
+
                 log::warn!(
                     "{}",
-                    format!(
-                        "XXX: lat/lon: {:.4},{:.4} h={:.1}",
-                        lat_rad * 180.0 / PI,
-                        lon_rad * 180.0 / PI,
-                        h / 1000.0
-                    )
-                    .red(),
+                    format!("XXX: lat/lon: {:.4},{:.4} h={:.1}", lat, lon, height).red(),
                 );
             }
         }
