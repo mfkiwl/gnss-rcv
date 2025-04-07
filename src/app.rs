@@ -255,27 +255,38 @@ impl GnssRcvApp {
             .min_height(50.0)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    egui::Grid::new("TopGrid").show(ui, |ui| {
+                    egui::Grid::new("MidGrid0").show(ui, |ui| {
                         ui.monospace(format!("{:?}", pub_state.tow_gpst).to_string());
                         ui.add(egui::Separator::default().vertical());
                         ui.horizontal(|ui| {
                             let n = pub_state.almanac.iter().filter(|&alm| alm.sat != 0).count();
                             ui.monospace(format!("almanac: {n}").to_string());
                         });
-                        //ui.add(egui::Separator::default().vertical());
+
                         if pub_state.ion_adj {
                             ui.horizontal(|ui| {
-                                ui.monospace(format!("ion: 1").to_string());
+                                ui.monospace("ion: 1".to_string());
                                 ui.add(egui::Separator::default().vertical());
                             });
                         }
                         if pub_state.utc_adj {
                             ui.horizontal(|ui| {
-                                ui.monospace(format!("utc: 1").to_string());
+                                ui.monospace("utc: 1".to_string());
                                 ui.add(egui::Separator::default().vertical());
                             });
                         }
                         ui.end_row();
+                    });
+                    egui::Grid::new("MidGrid1").show(ui, |ui| {
+                        let s = if pub_state.longitude != 0.0 {
+                            format!(
+                                "lat/long/height: {},{},{}",
+                                pub_state.longitude, pub_state.latitude, pub_state.height
+                            )
+                        } else {
+                            "no position fix".to_string()
+                        };
+                        ui.monospace(s);
                     });
                 });
             });
@@ -374,7 +385,7 @@ impl GnssRcvApp {
                         });
                         row.col(|ui| {
                             let s = if has_eph { "1" } else { "-" };
-                            ui.label(format!("{}", s).to_string());
+                            ui.label(s.to_string());
                         });
                         row.col(|ui| {
                             ui.label("".to_string());
