@@ -108,7 +108,6 @@ impl GnssRcvApp {
 
         let update_func = move || {
             ctx_clone.request_repaint_after_secs(0.05);
-            log::info!("repaint requested");
         };
 
         self.pub_state
@@ -308,6 +307,7 @@ impl GnssRcvApp {
             .column(Column::auto())
             .column(Column::auto())
             .column(Column::auto())
+            .column(Column::auto())
             .column(Column::remainder())
             .min_scrolled_height(0.0)
             .max_scroll_height(available_height);
@@ -328,6 +328,9 @@ impl GnssRcvApp {
                 });
                 header.col(|ui| {
                     ui.strong("phi");
+                });
+                header.col(|ui| {
+                    ui.strong("ephemeris");
                 });
                 header.col(|ui| {
                     ui.strong("other");
@@ -351,6 +354,7 @@ impl GnssRcvApp {
                     let phi = (channel.unwrap().phi % 1.0) * 2.0 * PI;
                     let doppler_hz = channel.unwrap().doppler_hz;
                     let code_idx = channel.unwrap().code_idx;
+                    let has_eph = channel.unwrap().has_eph;
 
                     body.row(row_height, |mut row| {
                         row.col(|ui| {
@@ -367,6 +371,10 @@ impl GnssRcvApp {
                         });
                         row.col(|ui| {
                             ui.label(format!("{:.2}", phi).to_string());
+                        });
+                        row.col(|ui| {
+                            let s = if has_eph { "1" } else { "-" };
+                            ui.label(format!("{}", s).to_string());
                         });
                         row.col(|ui| {
                             ui.label("".to_string());

@@ -176,6 +176,7 @@ impl Receiver {
         let ephs: Vec<_> = self
             .channels
             .values()
+            .filter(|&ch| ch.is_state_tracking())
             .filter(|&ch| ch.is_ephemeris_complete())
             .map(|ch| ch.nav.eph)
             .collect();

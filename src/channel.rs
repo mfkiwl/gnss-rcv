@@ -136,11 +136,15 @@ impl Channel {
         self.trk.cn0
     }
 
+    pub fn is_state_tracking(&self) -> bool {
+        self.state == State::Tracking
+    }
+
     pub fn is_ephemeris_complete(&self) -> bool {
-        self.get_cn0() >= CN0_THRESHOLD_LOCKED
-            && self.nav.eph.ts_sec != 0.0
+        self.nav.eph.ts_sec != 0.0
             && self.nav.eph.week != 0
             && self.nav.eph.toe != 0
+            && self.nav.eph.i0 != 0.0
             && self.nav.eph.a >= 20_000_000.0
     }
 

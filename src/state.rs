@@ -13,6 +13,7 @@ pub struct ChannelState {
     pub doppler_hz: f64,
     pub code_idx: f64,
     pub phi: f64,
+    pub has_eph: bool,
 }
 impl Default for ChannelState {
     fn default() -> Self {
@@ -22,6 +23,7 @@ impl Default for ChannelState {
             doppler_hz: 0.0,
             code_idx: 0.0,
             phi: 0.0,
+            has_eph: false,
         }
     }
 }
@@ -31,6 +33,7 @@ pub struct GnssState {
     pub almanac: Vec<Almanac>,
     pub utc_adj: bool,
     pub ion_adj: bool,
+
     pub channels: HashMap<SV, ChannelState>,
     pub update_func: UpdateFunc,
 }

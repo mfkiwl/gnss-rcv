@@ -285,6 +285,15 @@ impl Channel {
             5 => self.nav_decode_lnav_subframe5(buf),
             _ => log::warn!("{}: invalid subframe id={subframe_id}", self.sv),
         }
+        if self.is_ephemeris_complete() {
+            self.pub_state
+                .lock()
+                .unwrap()
+                .channels
+                .get_mut(&self.sv)
+                .unwrap()
+                .has_eph = true;
+        }
         if self.nav.eph.week != 0 {
             self.nav.eph.ts_sec = self.ts_sec;
             let week_to_secs = self.nav.eph.week * SECS_PER_WEEK;
