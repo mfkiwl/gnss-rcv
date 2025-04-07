@@ -95,6 +95,8 @@ impl GnssRcvApp {
         let active = self.active.clone();
         let needs_stop = self.needs_stop.clone();
         let iq_file = self.iq_file.clone();
+
+        self.pub_state = Arc::new(Mutex::new(GnssState::new()));
         let pub_state = self.pub_state.clone();
         let sig = "L1CA";
         let ctx_clone = ctx.clone();
@@ -121,7 +123,7 @@ impl GnssRcvApp {
                 needs_stop,
                 iq_file.into(),
                 iq_file_type,
-                &sig,
+                sig,
                 pub_state,
             );
             log::info!("thread_stop");
@@ -254,7 +256,28 @@ impl GnssRcvApp {
             .min_height(50.0)
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.monospace(format!("{:?}", pub_state.tow_gpst).to_string());
+                    egui::Grid::new("TopGrid").show(ui, |ui| {
+                        ui.monospace(format!("{:?}", pub_state.tow_gpst).to_string());
+                        ui.add(egui::Separator::default().vertical());
+                        ui.horizontal(|ui| {
+                            let n = pub_state.almanac.iter().filter(|&alm| alm.sat != 0).count();
+                            ui.monospace(format!("almanac: {n}").to_string());
+                        });
+                        //ui.add(egui::Separator::default().vertical());
+                        if pub_state.ion_adj {
+                            ui.horizontal(|ui| {
+                                ui.monospace(format!("ion: 1").to_string());
+                                ui.add(egui::Separator::default().vertical());
+                            });
+                        }
+                        if pub_state.utc_adj {
+                            ui.horizontal(|ui| {
+                                ui.monospace(format!("utc: 1").to_string());
+                                ui.add(egui::Separator::default().vertical());
+                            });
+                        }
+                        ui.end_row();
+                    });
                 });
             });
     }

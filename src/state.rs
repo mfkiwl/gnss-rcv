@@ -1,4 +1,4 @@
-use crate::channel::State;
+use crate::{almanac::Almanac, channel::State};
 use gnss_rs::sv::SV;
 use gnss_rtk::prelude::Epoch;
 use std::collections::HashMap;
@@ -28,6 +28,9 @@ impl Default for ChannelState {
 
 pub struct GnssState {
     pub tow_gpst: Epoch,
+    pub almanac: Vec<Almanac>,
+    pub utc_adj: bool,
+    pub ion_adj: bool,
     pub channels: HashMap<SV, ChannelState>,
     pub update_func: UpdateFunc,
 }
@@ -36,6 +39,9 @@ impl GnssState {
     pub fn new() -> Self {
         Self {
             tow_gpst: Epoch::default(),
+            almanac: vec![Almanac::default(); 32],
+            utc_adj: false,
+            ion_adj: false,
             channels: HashMap::<SV, ChannelState>::new(),
             update_func: UpdateFunc {
                 func: Box::new(|| {}),

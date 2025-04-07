@@ -1,7 +1,4 @@
-use std::sync::Mutex;
-
 use crate::{
-    almanac::Almanac,
     channel::Channel,
     constants::{P2_24, P2_27, P2_30, P2_50},
     ephemeris::Ephemeris,
@@ -10,16 +7,12 @@ use crate::{
 use colored::Colorize;
 use gnss_rs::sv::SV;
 use gnss_rtk::prelude::Epoch;
-use once_cell::sync::Lazy;
 
 const SECS_PER_WEEK: u32 = 7 * 24 * 60 * 60;
 const SDR_MAX_NSYM: usize = 18000;
 
 const THRESHOLD_SYNC: f64 = 0.4; // 0.02
 const THRESHOLD_LOST: f64 = 0.03; // 0.002
-
-static GPS_ALMANAC: Lazy<Mutex<Vec<Almanac>>> =
-    Lazy::new(|| Mutex::new(vec![Almanac::default(); 32]));
 
 #[derive(PartialEq, Debug, Default)]
 enum SyncState {
@@ -156,9 +149,11 @@ impl Channel {
         let svid = getbitu(buf, 62, 6);
 
         if data_id == 1 {
-            let alm_array = GPS_ALMANAC.lock().unwrap();
+            let pub_state = &mut self.pub_state.lock().unwrap();
+            let alm_array = &mut pub_state.almanac;
+
             if (25..=32).contains(&svid) {
-                let mut alm = alm_array[svid as usize - 1];
+                let alm = alm_array.get_mut(svid as usize - 1).unwrap();
                 alm.nav_decode_alm(buf, svid);
                 log::warn!("{}: {:?}", self.sv, alm);
             } else if svid == 63 {
@@ -169,7 +164,7 @@ impl Channel {
                 ];
 
                 for sv in 1..=32 {
-                    let mut alm = alm_array[sv - 1];
+                    let alm = alm_array.get_mut(sv - 1).unwrap();
                     let pos = ARRAY_SVCONF_IDX[sv - 1];
 
                     alm.svconf = getbitu(buf, pos, 4);
@@ -177,11 +172,11 @@ impl Channel {
 
                 const ARRAY_SVH_IDX: [usize; 8] = [228, 240, 246, 252, 258, 270, 276, 282];
                 for sv in 25..=32 {
-                    let mut alm = alm_array[sv - 1];
+                    let alm = alm_array.get_mut(sv - 1).unwrap();
                     let pos = ARRAY_SVH_IDX[sv - 25];
                     alm.svh = getbitu(buf, pos, 6);
                     if alm.svh != 0 {
-                        log::warn!("{}: subframe-4: sv {} is unhealthy", self.sv, sv)
+                        log::warn!("{}: sv {} is unhealthy", self.sv, sv)
                     }
                 }
             } else if svid == 56 {
@@ -198,12 +193,16 @@ impl Channel {
                 ion[6] = getbits(buf, 128, 8) as f64 * 2.0_f64.powi(16);
                 ion[7] = getbits(buf, 136, 8) as f64 * 2.0_f64.powi(16);
 
+                pub_state.ion_adj = true;
+
                 let mut utc: [f64; 4] = [0.0; 4];
 
                 utc[0] = getbits2(buf, 180, 24, 210, 8) as f64 * P2_30;
                 utc[1] = getbits(buf, 150, 24) as f64 * P2_50;
                 utc[2] = getbits(buf, 218, 8) as f64 * 2.0_f64.powi(12);
                 utc[3] = getbits(buf, 226, 8) as f64;
+
+                pub_state.utc_adj = true;
             }
         }
 
@@ -219,11 +218,11 @@ impl Channel {
         self.nav.eph.tow = getbitu(buf, 30, 17) * 6;
         let data_id = getbitu(buf, 60, 2);
         let svid = getbitu(buf, 62, 4);
+        let alm_array = &mut self.pub_state.lock().unwrap().almanac;
 
         if data_id == 1 {
-            let alm_array = GPS_ALMANAC.lock().unwrap();
             if (1..=24).contains(&svid) {
-                let mut alm = alm_array[svid as usize];
+                let alm = alm_array.get_mut(svid as usize - 1).unwrap();
                 alm.nav_decode_alm(buf, svid);
                 log::warn!("{}: {:?}", self.sv, alm);
             } else if svid == 51 {
@@ -235,15 +234,15 @@ impl Channel {
                     210, 216, 222, 228, 240, 246, 252, 258,
                 ];
                 for sv in 1..=24 {
-                    let mut alm = alm_array[sv - 1];
+                    let alm = alm_array.get_mut(sv - 1).unwrap();
                     let pos = ARRAY_SVH_IDX[sv - 25];
                     alm.svh = getbitu(buf, pos, 6);
                     if alm.svh != 0 {
-                        log::warn!("{}: subframe-4: sv {} is unhealthy", self.sv, sv)
+                        log::warn!("{}: sv {} is unhealthy", self.sv, sv)
                     }
                 }
                 for sv in 1..=32 {
-                    let mut alm = alm_array[sv - 1];
+                    let alm = alm_array.get_mut(sv - 1).unwrap();
                     alm.week = week;
                     alm.toas = toas;
                 }

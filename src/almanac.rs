@@ -3,7 +3,7 @@ use crate::{
     util::{getbitu, getbitu2},
 };
 
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct Almanac {
     pub sat: u32,    /* satellite number */
     pub svh: u32,    /* sv health (0:ok) */
@@ -24,6 +24,7 @@ pub struct Almanac {
 
 impl Almanac {
     pub fn nav_decode_alm(&mut self, buf: &[u8], svid: u32) {
+        assert!(svid > 0 && svid <= 32);
         self.sat = svid;
         self.e = getbitu(buf, 68, 16) as f64 * P2_21;
         self.toas = getbitu(buf, 90, 8) * 4096;
