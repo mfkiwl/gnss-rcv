@@ -42,6 +42,8 @@ A few online SDR recordings at 1575,42 MHz are available online:
 - https://s-taka.org/en/gnss-sdr-with-rtl-tcp/
 - https://destevez.net/2022/03/timing-sdr-recordings-with-gps/
 
+The info required to download/generate samples data: [README.md](./resources/README.md)
+
 ## Simulate a GPS L1 SDR recording
 Cf [GPS-SDR-SIM](https://github.com/osqzss/gps-sdr-sim)
 ```
