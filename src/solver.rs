@@ -8,11 +8,11 @@ use map_3d::{Ellipsoid, ecef2geodetic};
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
 
-use crate::{ephemeris::Ephemeris, state::GnssState};
-
-const SPEED_OF_LIGHT: f64 = 299_792_458.0;
-const EARTH_MU_GPS: f64 = 3.9860058e14; // earth gravitational constant
-const EARTH_ROTATION_RATE: f64 = 7.2921151467e-5;
+use crate::{
+    constants::{EARTH_MU_GPS, EARTH_ROTATION_RATE, SPEED_OF_LIGHT},
+    ephemeris::Ephemeris,
+    state::GnssState,
+};
 
 const PI: f64 = std::f64::consts::PI;
 
@@ -110,6 +110,7 @@ fn get_tropo_iono_bias() -> (TroposphereBias, IonosphereBias) {
 pub type I = fn(Epoch, SV, usize) -> Option<InterpolationResult>;
 pub struct PositionSolver {
     solver: Solver<I>,
+    pub_state: Arc<Mutex<GnssState>>,
 }
 
 static SOLVER_EPHEMERIS: Lazy<Mutex<Vec<Ephemeris>>> =
@@ -125,22 +126,17 @@ fn sv_interp(t: Epoch, sv: SV, _size: usize) -> Option<InterpolationResult> {
 
 impl PositionSolver {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new(pub_state: Arc<Mutex<GnssState>>) -> Self {
         let apriori = AprioriPosition::from_geo(Vector3::new(46.5, 6.6, 0.0));
         let mut cfg = Config::static_preset(Method::SPP);
         cfg.min_sv_elev = Some(0.0);
 
         let solver = Solver::new(&cfg, apriori, sv_interp as I).expect("Solver issue");
 
-        Self { solver }
+        Self { solver, pub_state }
     }
 
-    pub fn compute_position(
-        &mut self,
-        pub_state: Arc<Mutex<GnssState>>,
-        ts_sec: f64,
-        ephs: &Vec<Ephemeris>,
-    ) {
+    pub fn compute_position(&mut self, ts_sec: f64, ephs: &Vec<Ephemeris>) {
         {
             let mut glob_ephs = SOLVER_EPHEMERIS.lock().unwrap();
             *glob_ephs = ephs.clone();
@@ -217,9 +213,9 @@ impl PositionSolver {
                 let lon = lon_rad * 180.0 / PI;
                 let height = h / 1000.0;
 
-                pub_state.lock().unwrap().latitude = lat;
-                pub_state.lock().unwrap().longitude = lon;
-                pub_state.lock().unwrap().height = height;
+                self.pub_state.lock().unwrap().latitude = lat;
+                self.pub_state.lock().unwrap().longitude = lon;
+                self.pub_state.lock().unwrap().height = height;
 
                 log::warn!(
                     "{}",

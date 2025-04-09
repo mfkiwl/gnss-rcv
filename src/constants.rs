@@ -17,3 +17,7 @@ pub const P2_55: f64 = 2.775_557_561_562_891e-17; /* 2^-55 */
 
 #[allow(clippy::approx_constant)]
 pub const SC2RAD: f64 = 3.141_592_653_589_8; /* semi-circle to radian (IS-GPS) */
+
+pub const SPEED_OF_LIGHT: f64 = 299_792_458.0;
+pub const EARTH_MU_GPS: f64 = 3.9860058e14; // earth gravitational constant
+pub const EARTH_ROTATION_RATE: f64 = 7.2921151467e-5;

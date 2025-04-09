@@ -265,26 +265,7 @@ impl Channel {
         (self.pub_state.lock().unwrap().update_func.func)();
     }
 
-    fn nav_decode_lnav_subframe(&mut self, buf: &[u8]) -> u32 {
-        let preamble = getbitu(buf, 0, 8);
-        assert_eq!(preamble, 0x8b);
-        self.nav.eph.tlm = getbitu(buf, 8, 14);
-        let _isf = getbitu(buf, 22, 1);
-        let _rsvd = getbitu(buf, 23, 1);
-        let _alert = getbitu(buf, 47, 1);
-        let _anti_spoof = getbitu(buf, 48, 1);
-        let subframe_id = getbitu(buf, 49, 3);
-        let zero = getbitu(buf, 58, 2);
-        assert_eq!(zero, 0);
-
-        match subframe_id {
-            1 => self.nav_decode_lnav_subframe1(buf),
-            2 => self.nav_decode_lnav_subframe2(buf),
-            3 => self.nav_decode_lnav_subframe3(buf),
-            4 => self.nav_decode_lnav_subframe4(buf),
-            5 => self.nav_decode_lnav_subframe5(buf),
-            _ => log::warn!("{}: invalid subframe id={subframe_id}", self.sv),
-        }
+    fn nav_subframe_post(&mut self) {
         if self.is_ephemeris_complete() {
             self.pub_state
                 .lock()
@@ -312,6 +293,30 @@ impl Channel {
 
             self.update_gpst_time(self.nav.eph.tow_gpst);
         }
+    }
+
+    fn nav_decode_lnav_subframe(&mut self, buf: &[u8]) -> u32 {
+        let preamble = getbitu(buf, 0, 8);
+        assert_eq!(preamble, 0x8b);
+        self.nav.eph.tlm = getbitu(buf, 8, 14);
+        let _isf = getbitu(buf, 22, 1);
+        let _rsvd = getbitu(buf, 23, 1);
+        let _alert = getbitu(buf, 47, 1);
+        let _anti_spoof = getbitu(buf, 48, 1);
+        let subframe_id = getbitu(buf, 49, 3);
+        let zero = getbitu(buf, 58, 2);
+        assert_eq!(zero, 0);
+
+        match subframe_id {
+            1 => self.nav_decode_lnav_subframe1(buf),
+            2 => self.nav_decode_lnav_subframe2(buf),
+            3 => self.nav_decode_lnav_subframe3(buf),
+            4 => self.nav_decode_lnav_subframe4(buf),
+            5 => self.nav_decode_lnav_subframe5(buf),
+            _ => log::warn!("{}: invalid subframe id={subframe_id}", self.sv),
+        }
+
+        self.nav_subframe_post();
 
         subframe_id
     }
