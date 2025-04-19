@@ -179,6 +179,8 @@ impl Channel {
                         log::warn!("{}: sv {} is unhealthy", self.sv, sv)
                     }
                 }
+            } else if svid == 55 {
+                // page 17: special message
             } else if svid == 56 {
                 /* page 18 */
                 // handle iono, utc and leap seconds
@@ -209,7 +211,7 @@ impl Channel {
         log::warn!(
             "{}: {}: data_id={data_id} svid={svid} tow={}",
             self.sv,
-            "subframe-4".to_string().blue(),
+            "subframe-4".blue(),
             self.nav.eph.tow
         );
     }
@@ -254,7 +256,7 @@ impl Channel {
         log::warn!(
             "{}: {}: data_id={data_id} svid={svid} tow={}",
             self.sv,
-            "subframe-5".to_string().blue(),
+            "subframe-5".blue(),
             self.nav.eph.tow
         );
     }
