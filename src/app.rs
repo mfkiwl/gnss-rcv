@@ -280,7 +280,7 @@ impl GnssRcvApp {
                     egui::Grid::new("MidGrid1").show(ui, |ui| {
                         if pub_state.longitude != 0.0 {
                             let s = format!(
-                                "lat/long/height: {},{},{}",
+                                "lat={:.3} long={:.3} height={:.1}",
                                 pub_state.latitude, pub_state.longitude, pub_state.height
                             );
                             let url = format!(
