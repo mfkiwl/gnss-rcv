@@ -58,9 +58,19 @@ impl Ephemeris {
     }
     pub fn nav_decode_lnav_subframe1(&mut self, buf: &[u8], sv: SV) {
         self.tow = getbitu(buf, 30, 17) * 6;
+        // GPS Time started on Jan 6, 1980
+        // 1st GPS Time Epoch ended on 21 August 1999
+        // 2nd GPS Time Epoch ended on 06 April 2019
         self.week = getbitu(buf, 60, 10) + 2048;
+        // 00 = Invalid,
+        // 01 = P-code ON,
+        // 10 = C/A-code ON,
+        // 11= Invalid
         self.code = getbitu(buf, 70, 2);
         self.sva = getbitu(buf, 72, 4);
+        // The MSB shall indicate a summary of the health of the LNAV data, where
+        // 0 = all LNAV data are OK,
+        // 1 = some or all LNAV data are bad.
         self.svh = getbitu(buf, 76, 6);
 
         self.iodc = getbitu2(buf, 82, 2, 210, 8);
@@ -72,10 +82,11 @@ impl Ephemeris {
         self.f0 = getbits(buf, 270, 22) as f64 * P2_31;
 
         log::warn!(
-            "{sv}: {} tow={} week={} sva={} svh={} iodc={} tgd={:+e} toc={} a0={:+e} a1={:+e} a2={:+e}",
-            "subframe-1".to_string().blue(),
+            "{sv}: {} tow={} week={} code={} sva={} svh={} iodc={} tgd={:+e} toc={} f0={:+e} f1={:+e} f2={:+e}",
+            "subframe-1".blue(),
             self.tow,
             self.week,
+            self.code,
             self.sva,
             self.svh,
             self.iodc,
@@ -103,7 +114,7 @@ impl Ephemeris {
 
         log::warn!(
             "{sv}: {} tow={} a={} iode={} crs={} crc={} cuc={:+e} cus={:+e} ecc={} m0={} toe={}",
-            "subframe-2".to_string().blue(),
+            "subframe-2".blue(),
             self.tow,
             self.a,
             self.iode,
@@ -131,7 +142,7 @@ impl Ephemeris {
 
         log::warn!(
             "{sv}: {} tow={} cic={:+e} cis={:+e} omg={} omg0={} omgd={:+e} i0={} idot={:+e}",
-            "subframe-3".to_string().blue(),
+            "subframe-3".blue(),
             self.tow,
             self.cic,
             self.cis,

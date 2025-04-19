@@ -316,7 +316,7 @@ impl Channel {
             log::warn!(
                 "{}: {} cn0={:.1} ts_sec={:.3}",
                 self.sv,
-                "LOST".to_string().red(),
+                "LOST".red(),
                 self.trk.cn0,
                 self.ts_sec,
             );
@@ -381,7 +381,7 @@ impl Channel {
         log::warn!(
             "{}: {} cn0={cn0:.1} dopp={doppler_hz:5.0} code_off={code_offset_idx:4} ts_sec={:.3}",
             self.sv,
-            "LOCK".to_string().green(),
+            "LOCK".green(),
             self.ts_sec,
         );
         self.tracking_init();
@@ -685,7 +685,7 @@ impl Channel {
             log::warn!(
                 "{}: {} cn0={:.1} dopp={:5.0} code_idx={:4.0} phi={:5.2} ts_sec={:.3}",
                 self.sv,
-                "TRCK".to_string().green(),
+                "TRCK".green(),
                 self.trk.cn0,
                 self.trk.doppler_hz,
                 code_idx,

@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use structopt::StructOpt;
 
+use gnss_rcv::code::Code;
 use gnss_rcv::plots::plot_remove_old_graph;
 use gnss_rcv::receiver::Receiver;
 use gnss_rcv::recording::IQFileType;
@@ -98,6 +99,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         opt.off_msec,
         opt.num_msec,
     );
+    log::warn!(
+        "gnss-rcv: using signal {} frequency: {:.1} MHz",
+        &opt.sig, Code::get_code_freq(&opt.sig) / 1000_000.0);
+
 
     if opt.use_ui {
         gnss_rcv::egui_main();
