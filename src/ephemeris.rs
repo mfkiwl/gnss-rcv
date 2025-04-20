@@ -16,6 +16,7 @@ pub struct Ephemeris {
     pub ts_sec: f64, // receiver time for 1st subframe
     pub tow_gpst: Epoch,
     pub toe_gpst: Epoch, // cf toe
+    pub toc_gpst: Epoch,
     pub tlm: u32,
 
     pub iode: u32,    // Issue of Data, Ephemeris
@@ -108,9 +109,9 @@ impl Ephemeris {
         self.cuc = getbits(buf, 150, 16) as f64 * P2_29;
         self.cus = getbits(buf, 210, 16) as f64 * P2_29;
         let sqrt_a = getbitu2(buf, 226, 8, 240, 24) as f64 * P2_19;
+        self.a = sqrt_a * sqrt_a;
         self.toe = getbitu(buf, 270, 16) * 16;
         self.fit = getbitu(buf, 286, 1);
-        self.a = sqrt_a * sqrt_a;
 
         log::warn!(
             "{sv}: {} tow={} a={} iode={} crs={} crc={} cuc={:+e} cus={:+e} ecc={} m0={} toe={}",

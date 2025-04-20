@@ -683,7 +683,7 @@ impl Channel {
         let code_idx = self.hist.code_phase_offset.last().unwrap();
         if self.ts_sec - self.hist.last_log_ts > 3.0 {
             log::warn!(
-                "{}: {} cn0={:.1} dopp={:5.0} code_idx={:4.0} phi={:5.2} ts_sec={:.3}",
+                "{}: {} cn0={:.1} dopp={:5.0} code_idx={:4.0} phi={:5.2} ts_sec={:.3} code_off_sec={:+.3e}",
                 self.sv,
                 "TRCK".green(),
                 self.trk.cn0,
@@ -691,6 +691,7 @@ impl Channel {
                 code_idx,
                 (self.trk.phi % 1.0) * 2.0 * PI,
                 self.ts_sec,
+                self.trk.code_off_sec
             );
             self.hist.last_log_ts = self.ts_sec;
         }

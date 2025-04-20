@@ -157,21 +157,14 @@ impl PositionSolver {
          *  sat1      [------]
          *  sat2      [-------------]
          */
-        let mut pool: Vec<Candidate> = vec![];
-        let mut min_gpst = ephs[0].tow_gpst + Duration::from_seconds(ts_sec - ephs[0].ts_sec);
-        log::warn!("ts_sec={} vs eph0.ts_sec={}", ts_sec, ephs[0].ts_sec);
-        for eph in ephs {
-            log::warn!(
-                "{} ts_sec={} vs eph0.ts_sec={}",
-                eph.sv,
-                ts_sec,
-                ephs[0].ts_sec
-            );
-            let e_gpst = eph.tow_gpst + Duration::from_seconds(ts_sec - eph.ts_sec);
-            if e_gpst < min_gpst {
-                min_gpst = e_gpst;
-            }
-        }
+        let mut pool = vec![];
+
+        let min_gpst = ephs
+            .iter()
+            .map(|&eph| eph.tow_gpst + Duration::from_seconds(ts_sec - eph.ts_sec))
+            .min()
+            .unwrap();
+
         let now_gpst = min_gpst + 0.01;
         log::warn!("----- now_gpst={now_gpst:?}");
         for eph in ephs {

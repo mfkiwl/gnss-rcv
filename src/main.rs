@@ -101,8 +101,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     log::warn!(
         "gnss-rcv: using signal {} frequency: {:.1} MHz",
-        &opt.sig, Code::get_code_freq(&opt.sig) / 1000_000.0);
-
+        &opt.sig,
+        Code::get_code_freq(&opt.sig) / 1_000_000.0
+    );
 
     if opt.use_ui {
         gnss_rcv::egui_main();

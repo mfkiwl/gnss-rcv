@@ -278,13 +278,17 @@ impl Channel {
                 .has_eph = true;
         }
         if self.nav.eph.week != 0 {
-            self.nav.eph.ts_sec = self.ts_sec;
             let week_to_secs = self.nav.eph.week * SECS_PER_WEEK;
             let tow_secs_gpst = week_to_secs + self.nav.eph.tow;
             let toe_secs_gpst = week_to_secs + self.nav.eph.toe;
+            let toc_secs_gpst = week_to_secs + self.nav.eph.toc;
 
             self.nav.eph.tow_gpst = Epoch::from_gpst_seconds(tow_secs_gpst.into());
             self.nav.eph.toe_gpst = Epoch::from_gpst_seconds(toe_secs_gpst.into());
+            self.nav.eph.toc_gpst = Epoch::from_gpst_seconds(toc_secs_gpst.into());
+
+            self.nav.eph.ts_sec = self.ts_sec;
+
             log::warn!(
                 "{}: tow={:?} tgd={:+e} toe={:?}",
                 self.sv,
