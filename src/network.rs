@@ -12,6 +12,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use crate::code::Code;
+use crate::receiver::IQReader;
 
 pub struct RtlSdrTcp {
     iq_deque: Arc<Mutex<VecDeque<Vec<Complex64>>>>,
@@ -33,6 +34,46 @@ impl Drop for RtlSdrTcp {
             self.ts.elapsed().as_secs_f64(),
             tot as f64 / self.ts.elapsed().as_secs_f64()
         );
+    }
+}
+
+impl IQReader for RtlSdrTcp {
+    fn get_iq_data(
+        &mut self,
+        _off_samples: usize,
+        num_samples: usize,
+    ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
+        loop {
+            if *self.num_samples.lock().unwrap() >= num_samples {
+                break;
+            }
+            thread::sleep(std::time::Duration::from_millis(1));
+            self.num_sleep += 1;
+        }
+        let mut vec = vec![];
+        let mut iq_deq = self.iq_deque.lock().unwrap();
+
+        let v_front = iq_deq.front_mut().unwrap();
+        let n = usize::min(num_samples, v_front.len());
+        for v in v_front.iter().take(n) {
+            vec.push(*v);
+        }
+        let _ = v_front.drain(0..n);
+        if v_front.is_empty() {
+            let _ = iq_deq.pop_front();
+        }
+
+        if n < num_samples {
+            let v_front = iq_deq.front_mut().unwrap();
+            for i in n..num_samples {
+                vec.push(v_front[i - n]);
+            }
+            let _ = v_front.drain(0..num_samples - n);
+        }
+
+        *self.num_samples.lock().unwrap() -= num_samples;
+
+        Ok(vec)
     }
 }
 
@@ -105,42 +146,5 @@ impl RtlSdrTcp {
         m.read_th = Some(th);
 
         Ok(m)
-    }
-
-    pub fn read_iq_data(
-        &mut self,
-        num_samples: usize,
-    ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>> {
-        loop {
-            if *self.num_samples.lock().unwrap() >= num_samples {
-                break;
-            }
-            thread::sleep(std::time::Duration::from_millis(1));
-            self.num_sleep += 1;
-        }
-        let mut vec = vec![];
-        let mut iq_deq = self.iq_deque.lock().unwrap();
-
-        let v_front = iq_deq.front_mut().unwrap();
-        let n = usize::min(num_samples, v_front.len());
-        for v in v_front.iter().take(n) {
-            vec.push(*v);
-        }
-        let _ = v_front.drain(0..n);
-        if v_front.is_empty() {
-            let _ = iq_deq.pop_front();
-        }
-
-        if n < num_samples {
-            let v_front = iq_deq.front_mut().unwrap();
-            for i in n..num_samples {
-                vec.push(v_front[i - n]);
-            }
-            let _ = v_front.drain(0..num_samples - n);
-        }
-
-        *self.num_samples.lock().unwrap() -= num_samples;
-
-        Ok(vec)
     }
 }

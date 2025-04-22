@@ -19,10 +19,16 @@ use crate::state::GnssState;
 
 const PERIOD_RCV: f64 = 0.001;
 
-pub type ReadIQFn = dyn FnMut(usize, usize) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>;
+pub trait IQReader {
+    fn get_iq_data(
+        &mut self,
+        off_samples: usize,
+        num_samples: usize,
+    ) -> Result<Vec<Complex64>, Box<dyn std::error::Error>>;
+}
 
 pub struct Receiver {
-    read_iq_fn: Box<ReadIQFn>,
+    iq_feed: Box<dyn IQReader>,
     period_sp: usize, // samples per period
     off_samples: usize,
     cached_iq_vec: Vec<Complex64>,
@@ -54,7 +60,7 @@ fn get_sat_list(sats: &str) -> Vec<SV> {
     sat_vec
 }
 
-fn get_reader_fn(
+fn get_iq_feed(
     use_device: bool,
     hostname: &str,
     sig: &str,
@@ -62,31 +68,23 @@ fn get_reader_fn(
     file: &Path,
     iq_file_type: &IQFileType,
     exit_req: Arc<AtomicBool>,
-) -> Option<Box<ReadIQFn>> {
+) -> Option<Box<dyn IQReader>> {
     if use_device {
         let res = RtlSdrDevice::new(sig, fs);
         if res.is_err() {
             log::warn!("Failed to open rtl-sdr device.");
             return None;
         }
-        let mut dev = res.unwrap();
+        let dev = res.unwrap();
 
-        Some(Box::new(move |_off_samples, num_samples| {
-            dev.read_iq_data(num_samples)
-        }))
+        Some(Box::new(dev))
     } else if !hostname.is_empty() {
-        let mut net = RtlSdrTcp::new(hostname, exit_req.clone(), sig, fs).unwrap();
+        let net = RtlSdrTcp::new(hostname, exit_req.clone(), sig, fs).unwrap();
 
         log::warn!("Using rtl_tcp backend: {}", hostname);
-        Some(Box::new(move |_off_samples, num_samples| {
-            net.read_iq_data(num_samples)
-        }))
+        Some(Box::new(net))
     } else {
-        let mut recording = IQRecording::new(file, fs, iq_file_type);
-
-        Some(Box::new(move |off_samples, num_samples| {
-            recording.read_iq_file(off_samples, num_samples)
-        }))
+        Some(Box::new(IQRecording::new(file, fs, iq_file_type)))
     }
 }
 
@@ -114,7 +112,7 @@ impl Receiver {
             channels.insert(sv, Channel::new(sig, sv, fs, fi, pub_state));
         }
 
-        let read_iq_fn = get_reader_fn(
+        let iq_feed = get_iq_feed(
             use_device,
             hostname,
             sig,
@@ -126,7 +124,7 @@ impl Receiver {
         .unwrap();
 
         Self {
-            read_iq_fn,
+            iq_feed,
             period_sp,
             off_samples: off_msec * period_sp,
             cached_iq_vec: Vec::<Complex64>::new(),
@@ -145,7 +143,7 @@ impl Receiver {
             self.period_sp
         };
 
-        let mut iq_vec = (self.read_iq_fn)(self.off_samples, num_samples)?;
+        let mut iq_vec = self.iq_feed.get_iq_data(self.off_samples, num_samples)?;
 
         self.off_samples += num_samples;
         self.cached_iq_vec.append(&mut iq_vec);

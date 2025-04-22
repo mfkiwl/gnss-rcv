@@ -12,6 +12,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Instant;
 
+use crate::receiver::IQReader;
+
 #[derive(Clone)]
 pub enum IQFileType {
     TypePairFloat32,
@@ -49,33 +51,8 @@ pub struct IQRecording {
     file_type: IQFileType,
 }
 
-impl IQRecording {
-    pub fn new(file_path: &Path, fs: f64, file_type: &IQFileType) -> Self {
-        let file_size = file_path.metadata().unwrap().len();
-        let sample_size = Self::get_sample_size_bytes(file_type) as f64;
-        let recording_duration_sec = file_size as f64 / fs / sample_size;
-
-        println!(
-            "file: {} -- {file_type} {} duration: {:.1} secs",
-            file_path.display().to_string().green(),
-            ByteSize::b(file_size).to_string().bold(),
-            recording_duration_sec
-        );
-        Self {
-            file_path: file_path.to_path_buf(),
-            file_type: file_type.clone(),
-        }
-    }
-
-    fn get_sample_size_bytes(file_type: &IQFileType) -> usize {
-        match file_type {
-            IQFileType::TypeRtlSdrFile => 2,
-            IQFileType::TypeOneInt8 => 1,
-            IQFileType::TypePairInt16 => 2 * 2,
-            IQFileType::TypePairFloat32 => 2 * 4,
-        }
-    }
-    pub fn read_iq_file(
+impl IQReader for IQRecording {
+    fn get_iq_data(
         &mut self,
         off_samples: usize,
         num_samples: usize,
@@ -195,5 +172,33 @@ impl IQRecording {
         }
 
         Ok(iq_vec)
+    }
+}
+
+impl IQRecording {
+    pub fn new(file_path: &Path, fs: f64, file_type: &IQFileType) -> Self {
+        let file_size = file_path.metadata().unwrap().len();
+        let sample_size = Self::get_sample_size_bytes(file_type) as f64;
+        let recording_duration_sec = file_size as f64 / fs / sample_size;
+
+        println!(
+            "file: {} -- {file_type} {} duration: {:.1} secs",
+            file_path.display().to_string().green(),
+            ByteSize::b(file_size).to_string().bold(),
+            recording_duration_sec
+        );
+        Self {
+            file_path: file_path.to_path_buf(),
+            file_type: file_type.clone(),
+        }
+    }
+
+    fn get_sample_size_bytes(file_type: &IQFileType) -> usize {
+        match file_type {
+            IQFileType::TypeRtlSdrFile => 2,
+            IQFileType::TypeOneInt8 => 1,
+            IQFileType::TypePairInt16 => 2 * 2,
+            IQFileType::TypePairFloat32 => 2 * 4,
+        }
     }
 }
