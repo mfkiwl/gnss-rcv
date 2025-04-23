@@ -15,15 +15,9 @@ As the gnss receiver processes the IQ data it periodically updates a web page (i
 
 ![diagnostic output](./assets/iq-output.png)
 
-## Dependencies
-You need to install librtlsdr:
-```
-$ sudo apt install librtlsdr-dev
-```
-or
-```
-$ brew install librtlsdr
-```
+## User Interface
+The UI interface can be started with the command line option -u.
+![diagnostic output](./assets/gnss-rcv-ui.png)
 
 ## Run with IQ recording of L1 signal sampled at 2046MHz
 ```
@@ -53,6 +47,16 @@ This generates an IQ recording w/ 2 int16 per I and Q sample.
 You can use this using the cmd-line option "-t 2xf16".
 
 ## RTLSDR
+
+## Dependencies
+You need to install librtlsdr:
+```
+$ sudo apt install librtlsdr-dev
+```
+or
+```
+$ brew install librtlsdr
+```
 
 ### Use rtlsdr dongle w/ L1 antenna as input
 If you have an rtlsdr dongle with a GPS L1 antenna you can try to run the receiver directly off of the IQ sampled by the device:
@@ -101,9 +105,11 @@ WIP: same caveat
 - [GPS visualisation](https://ciechanow.ski/gps/)
 - [GPS signal](https://www.e-education.psu.edu/geog862/node/1407)
 
+## Contributions
+Any code contribution is welcome!
+
 ## TODO
 - finish position fix computation
 - test + fix rtlsdr support
 - support: SBAS, Galileo, QZSS, Beidu.
 - handle different sampling frequencies
-- add a minimal UI: ratatui/egui
